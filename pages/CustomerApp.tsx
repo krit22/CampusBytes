@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ShoppingBag, Utensils, Clock, ChefHat } from 'lucide-react';
+import { ShoppingBag, Utensils, Clock } from 'lucide-react';
 import { MenuItem, CartItem, Order, OrderStatus } from '../types';
 import { db } from '../services/storage';
 import { CartSheet } from '../components/CartSheet';
@@ -79,16 +79,49 @@ export const CustomerApp: React.FC = () => {
     }
   };
 
+  const handleCancelOrder = async () => {
+    if (!activeOrder) return;
+    if (window.confirm('Are you sure you want to cancel this order?')) {
+      try {
+        await db.updateOrderStatus(activeOrder.id, OrderStatus.CANCELLED);
+      } catch (error) {
+        console.error("Failed to cancel order", error);
+        alert("Failed to cancel order. Please try again.");
+      }
+    }
+  };
+
   const categories = Array.from(new Set(menu.map(m => m.category)));
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
   if (activeOrder) {
+    const isCancelled = activeOrder.status === OrderStatus.CANCELLED;
+    const isDelivered = activeOrder.status === OrderStatus.DELIVERED;
+    
+    let headerBg = 'bg-orange-600';
+    let title = 'Order Placed!';
+    let subtitle = 'Show this screen to the counter';
+
+    if (isCancelled) {
+      headerBg = 'bg-red-600';
+      title = 'Order Cancelled';
+      subtitle = 'This order was cancelled';
+    } else if (isDelivered) {
+      headerBg = 'bg-emerald-600';
+      title = 'Order Delivered';
+      subtitle = 'Enjoy your meal!';
+    } else if (activeOrder.status === OrderStatus.READY) {
+      headerBg = 'bg-green-600';
+      title = 'Order Ready!';
+      subtitle = 'Please pick up your order';
+    }
+
     return (
       <div className="min-h-screen bg-slate-50 p-6 flex flex-col items-center justify-center">
         <div className="w-full max-w-md bg-white rounded-3xl shadow-xl overflow-hidden border border-slate-100">
-          <div className="bg-orange-600 p-6 text-center text-white">
-            <h2 className="text-2xl font-bold mb-1">Order Placed!</h2>
-            <p className="opacity-90 text-sm">Show this screen to the counter</p>
+          <div className={`${headerBg} p-6 text-center text-white transition-colors duration-300`}>
+            <h2 className="text-2xl font-bold mb-1">{title}</h2>
+            <p className="opacity-90 text-sm">{subtitle}</p>
           </div>
           
           <div className="p-8 flex flex-col items-center text-center">
@@ -127,13 +160,22 @@ export const CustomerApp: React.FC = () => {
                  </div>
               </div>
 
-              {activeOrder.status === OrderStatus.DELIVERED && (
+              {activeOrder.status === OrderStatus.NEW && (
+                 <button 
+                    onClick={handleCancelOrder}
+                    className="w-full py-3 border border-red-200 text-red-600 bg-red-50 hover:bg-red-100 rounded-xl font-semibold shadow-sm transition-colors"
+                 >
+                    Cancel Order
+                 </button>
+              )}
+
+              {(isDelivered || isCancelled) && (
                  <button 
                     onClick={() => {
                         setActiveOrder(null);
                         sessionStorage.removeItem('active_order_id');
                     }}
-                    className="w-full py-3 bg-slate-900 text-white rounded-xl font-semibold shadow-lg mt-4"
+                    className="w-full py-3 bg-slate-900 text-white rounded-xl font-semibold shadow-lg mt-2"
                  >
                     Start New Order
                  </button>
