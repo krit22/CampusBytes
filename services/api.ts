@@ -52,4 +52,63 @@ export const apiDb = {
     return res.json();
   },
 
-  getOrderById: async
+  getOrderById: async (id: string): Promise<Order | null> => {
+    // Fetch all and filter since backend doesn't expose specific ID endpoint yet
+    try {
+      const res = await fetch(`${API_URL}/api/orders`);
+      if (!res.ok) return null;
+      const orders: Order[] = await res.json();
+      return orders.find(o => o.id === id) || null;
+    } catch (e) {
+      return null;
+    }
+  },
+
+  createOrder: async (user: User, items: any[], total: number, paymentMethod: 'CASH' | 'UPI'): Promise<Order> => {
+    const res = await fetch(`${API_URL}/api/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customerId: user.id,
+        customerName: user.name,
+        items,
+        totalAmount: total,
+        paymentMethod
+      })
+    });
+    if (!res.ok) throw new Error('Failed to create order');
+    return res.json();
+  },
+
+  updateOrderStatus: async (orderId: string, status: OrderStatus): Promise<void> => {
+    await fetch(`${API_URL}/api/orders/${orderId}/status`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+  },
+
+  updatePaymentStatus: async (orderId: string, status: PaymentStatus): Promise<void> => {
+    await fetch(`${API_URL}/api/orders/${orderId}/payment`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+  },
+  
+  subscribeToOrders: (callback: (orders: Order[]) => void) => {
+    // Polling for API mode
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`${API_URL}/api/orders`);
+        if (res.ok) {
+          const orders = await res.json();
+          callback(orders);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }
+};
