@@ -12,7 +12,8 @@ const GOOGLE_CLIENT_ID = import.meta.env?.VITE_GOOGLE_CLIENT_ID || "";
 // ENVIRONMENT DETECTION
 const IS_VALID_AUTH_DOMAIN = window.location.hostname === 'localhost' || 
                              window.location.hostname.includes('firebaseapp.com') || 
-                             window.location.hostname.includes('web.app');
+                             window.location.hostname.includes('web.app') ||
+                             window.location.hostname.includes('vercel.app');
 
 const USE_REAL_AUTH = GOOGLE_CLIENT_ID && IS_VALID_AUTH_DOMAIN;
 
