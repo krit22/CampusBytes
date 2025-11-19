@@ -1,12 +1,22 @@
-import { MenuItem, Order, OrderStatus, PaymentStatus } from '../types';
+
+import { MenuItem, Order, OrderStatus, PaymentStatus, User } from '../types';
+import { firebaseDb } from './firebase';
 
 // Constants
 const STORAGE_KEYS = {
   ORDERS: 'cb_orders',
   MENU: 'cb_menu',
+  USER: 'cb_user'
 };
 
-// Initial Mock Menu Data
+// Check Environment Variable to decide mode
+// Safely access using optional chaining
+const USE_FIREBASE = import.meta.env?.VITE_USE_FIREBASE === 'true';
+
+// ------------------------------------------------------------------
+// MOCK IMPLEMENTATION (Local Storage)
+// ------------------------------------------------------------------
+
 const INITIAL_MENU: MenuItem[] = [
   { id: 'm1', name: 'Campus Burger', description: 'Classic chicken patty with cheese & special sauce', price: 85, category: 'Burgers', isAvailable: true },
   { id: 'm2', name: 'Veggie Delight', description: 'Spicy potato patty with fresh lettuce', price: 65, category: 'Burgers', isAvailable: true },
@@ -16,11 +26,22 @@ const INITIAL_MENU: MenuItem[] = [
   { id: 'm6', name: 'Egg Roll', description: 'Double egg roll with spicy chutney', price: 60, category: 'Wraps', isAvailable: true },
 ];
 
-// Helper to delay for realism
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-export const db = {
-  // Initialize
+export const parseJwt = (token: string): any => {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(window.atob(base64).split('').map(function(c) {
+      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+    return JSON.parse(jsonPayload);
+  } catch (e) {
+    return null;
+  }
+};
+
+const mockDb = {
   init: () => {
     if (!localStorage.getItem(STORAGE_KEYS.MENU)) {
       localStorage.setItem(STORAGE_KEYS.MENU, JSON.stringify(INITIAL_MENU));
@@ -30,35 +51,74 @@ export const db = {
     }
   },
 
-  // Menu Operations
+  login: async (userData?: Partial<User>): Promise<User> => {
+    await delay(500);
+    
+    let user: User;
+    
+    if (userData && userData.email) {
+      user = {
+        id: userData.id || 'u_' + Math.abs(userData.email.hashCode()),
+        name: userData.name || 'Campus Student',
+        email: userData.email,
+        avatar: userData.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${userData.name}`
+      };
+    } else {
+      user = {
+        id: 'u_mock_123',
+        name: 'Alex Student',
+        email: 'alex@campus.edu',
+        avatar: 'https://api.dicebear.com/7.x/notionists/svg?seed=Alex'
+      };
+    }
+
+    localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
+    return user;
+  },
+
+  logout: async (): Promise<void> => {
+    await delay(200);
+    localStorage.removeItem(STORAGE_KEYS.USER);
+  },
+
+  getCurrentUser: (): User | null => {
+    const stored = localStorage.getItem(STORAGE_KEYS.USER);
+    return stored ? JSON.parse(stored) : null;
+  },
+
   getMenu: async (): Promise<MenuItem[]> => {
     await delay(300);
     const data = localStorage.getItem(STORAGE_KEYS.MENU);
     return data ? JSON.parse(data) : [];
   },
 
-  // Order Operations
   getOrders: async (): Promise<Order[]> => {
     const data = localStorage.getItem(STORAGE_KEYS.ORDERS);
     return data ? JSON.parse(data) : [];
   },
 
+  getUserOrders: async (userId: string): Promise<Order[]> => {
+    const orders = await mockDb.getOrders();
+    return orders.filter(o => o.customerId === userId).sort((a, b) => b.createdAt - a.createdAt);
+  },
+
   getOrderById: async (id: string): Promise<Order | null> => {
-    const orders = await db.getOrders();
+    const orders = await mockDb.getOrders();
     return orders.find(o => o.id === id) || null;
   },
 
-  createOrder: async (items: any[], total: number, paymentMethod: 'CASH' | 'UPI'): Promise<Order> => {
-    await delay(600);
-    const orders = await db.getOrders();
+  createOrder: async (user: User, items: any[], total: number, paymentMethod: 'CASH' | 'UPI'): Promise<Order> => {
+    await delay(800);
+    const orders = await mockDb.getOrders();
     
-    // Generate simplified Token (R-XXX)
     const randomNum = Math.floor(Math.random() * 900) + 100;
     const token = `R-${randomNum}`;
     
     const newOrder: Order = {
       id: Date.now().toString(),
       token,
+      customerId: user.id,
+      customerName: user.name,
       items,
       totalAmount: total,
       status: OrderStatus.NEW,
@@ -75,7 +135,7 @@ export const db = {
 
   updateOrderStatus: async (orderId: string, status: OrderStatus): Promise<void> => {
     await delay(200);
-    const orders = await db.getOrders();
+    const orders = await mockDb.getOrders();
     const index = orders.findIndex(o => o.id === orderId);
     if (index !== -1) {
       orders[index].status = status;
@@ -86,7 +146,7 @@ export const db = {
 
   updatePaymentStatus: async (orderId: string, status: PaymentStatus): Promise<void> => {
     await delay(200);
-    const orders = await db.getOrders();
+    const orders = await mockDb.getOrders();
     const index = orders.findIndex(o => o.id === orderId);
     if (index !== -1) {
       orders[index].paymentStatus = status;
@@ -95,14 +155,40 @@ export const db = {
     }
   },
   
-  // For polling mechanism
   subscribeToOrders: (callback: (orders: Order[]) => void) => {
     const interval = setInterval(async () => {
-      const orders = await db.getOrders();
+      const orders = await mockDb.getOrders();
       callback(orders);
-    }, 1500); // Poll every 1.5s to simulate realtime
+    }, 1500); 
     return () => clearInterval(interval);
   }
 };
 
+// --- EXTENSIONS ---
+declare global {
+  interface String {
+    hashCode(): number;
+  }
+}
+
+String.prototype.hashCode = function() {
+  var hash = 0, i, chr;
+  if (this.length === 0) return hash;
+  for (i = 0; i < this.length; i++) {
+    chr = this.charCodeAt(i);
+    hash = ((hash << 5) - hash) + chr;
+    hash |= 0; 
+  }
+  return hash;
+};
+
+// ------------------------------------------------------------------
+// EXPORT
+// ------------------------------------------------------------------
+
+// If VITE_USE_FIREBASE is true in .env, export the Real Firebase DB
+// Otherwise, export the Mock DB
+export const db = USE_FIREBASE ? firebaseDb : mockDb;
+
+// Initialize the chosen DB
 db.init();

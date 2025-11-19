@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { db } from '../services/storage';
 import { Order, OrderStatus, PaymentStatus } from '../types';
 import { Badge } from '../components/Badge';
-import { RefreshCw, CheckCircle, Clock, Check, X, DollarSign } from 'lucide-react';
+import { RefreshCw, CheckCircle, Clock, Check, X, DollarSign, User } from 'lucide-react';
 
 export const VendorApp: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -134,6 +134,9 @@ export const VendorApp: React.FC = () => {
                             <div className="flex items-center gap-2 mb-1">
                                 <span className="font-mono text-2xl font-black text-slate-800">{order.token}</span>
                                 <Badge status={order.status} />
+                            </div>
+                            <div className="flex items-center gap-1 text-xs text-slate-600 font-medium mb-1">
+                              <User size={10} /> {order.customerName || 'Guest'}
                             </div>
                             <div className="text-xs text-slate-500">
                                 {new Date(order.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} • {order.items.length} items

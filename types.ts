@@ -25,9 +25,18 @@ export interface CartItem extends MenuItem {
   quantity: number;
 }
 
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  avatar: string;
+}
+
 export interface Order {
   id: string;
   token: string; // e.g., R-042
+  customerId: string;
+  customerName: string;
   items: CartItem[];
   totalAmount: number;
   status: OrderStatus;
@@ -40,4 +49,11 @@ export interface Order {
 export interface VendorAuth {
   isAuthenticated: boolean;
   pin: string;
+}
+
+// Google Identity Services Types
+declare global {
+  interface Window {
+    google: any;
+  }
 }
