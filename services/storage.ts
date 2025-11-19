@@ -1,6 +1,7 @@
 
 import { MenuItem, Order, OrderStatus, PaymentStatus, User } from '../types';
 import { firebaseDb } from './firebase';
+import { apiDb } from './api';
 
 // Constants
 const STORAGE_KEYS = {
@@ -9,9 +10,10 @@ const STORAGE_KEYS = {
   USER: 'cb_user'
 };
 
-// Check Environment Variable to decide mode
-// Safely access using optional chaining
+// Check Environment Variables
 const USE_FIREBASE = import.meta.env?.VITE_USE_FIREBASE === 'true';
+// Default to TRUE if we want to force the backend integration now
+const USE_API = import.meta.env?.VITE_USE_API === 'true' || true; 
 
 // ------------------------------------------------------------------
 // MOCK IMPLEMENTATION (Local Storage)
@@ -53,9 +55,7 @@ const mockDb = {
 
   login: async (userData?: Partial<User>): Promise<User> => {
     await delay(500);
-    
     let user: User;
-    
     if (userData && userData.email) {
       user = {
         id: userData.id || 'u_' + Math.abs(userData.email.hashCode()),
@@ -71,7 +71,6 @@ const mockDb = {
         avatar: 'https://api.dicebear.com/7.x/notionists/svg?seed=Alex'
       };
     }
-
     localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
     return user;
   },
@@ -186,9 +185,8 @@ String.prototype.hashCode = function() {
 // EXPORT
 // ------------------------------------------------------------------
 
-// If VITE_USE_FIREBASE is true in .env, export the Real Firebase DB
-// Otherwise, export the Mock DB
-export const db = USE_FIREBASE ? firebaseDb : mockDb;
+// Priority: API > Firebase > Mock
+export const db = USE_API ? apiDb : (USE_FIREBASE ? firebaseDb : mockDb);
 
 // Initialize the chosen DB
 db.init();

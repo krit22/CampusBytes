@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useMemo } from 'react';
 import { db } from '../services/storage';
 import { Order, OrderStatus, PaymentStatus } from '../types';
@@ -38,6 +39,15 @@ export const VendorApp: React.FC = () => {
 
   const handlePaymentUpdate = async (orderId: string, status: PaymentStatus) => {
     await db.updatePaymentStatus(orderId, status);
+  };
+
+  const handleCompleteOrder = async (order: Order) => {
+    // 1. Ensure payment is marked as PAID (Vendor confirms collection)
+    if (order.paymentStatus !== PaymentStatus.PAID) {
+        await db.updatePaymentStatus(order.id, PaymentStatus.PAID);
+    }
+    // 2. Mark as DELIVERED (Moves to Completed Tab)
+    await db.updateOrderStatus(order.id, OrderStatus.DELIVERED);
   };
 
   const filteredOrders = useMemo(() => {
@@ -187,11 +197,10 @@ export const VendorApp: React.FC = () => {
 
                         {order.status === OrderStatus.READY && (
                              <button 
-                                onClick={() => handleStatusUpdate(order.id, OrderStatus.DELIVERED)}
-                                disabled={order.paymentStatus !== PaymentStatus.PAID}
-                                className="col-span-2 bg-green-600 hover:bg-green-700 disabled:bg-slate-300 disabled:text-slate-500 text-white py-2 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-2"
+                                onClick={() => handleCompleteOrder(order)}
+                                className="col-span-2 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-2"
                              >
-                                {order.paymentStatus !== PaymentStatus.PAID ? 'Collect Payment First' : 'Complete Order'}
+                                Complete Order (Paid)
                              </button>
                          )}
 

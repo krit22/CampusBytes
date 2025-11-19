@@ -151,12 +151,8 @@ export const CustomerApp: React.FC = () => {
   const handleLogout = async () => {
     if (confirm('Sign out of CampusBytes?')) {
       await db.logout();
-      setUser(null);
-      setView('LOGIN');
-      setCart([]);
-      setShowEmailForm(false);
-      setDemoEmail('');
-      setDemoName('');
+      // Force reload to ensure clean state and proper auth re-init
+      window.location.reload();
     }
   };
 

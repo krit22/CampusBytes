@@ -1,36 +1,42 @@
 
 import { MenuItem, Order, OrderStatus, PaymentStatus, User } from '../types';
 
-// Get API URL from Environment, default to localhost for dev
+// Get API URL from Environment, default to Render for AI Studio/Dev
 // Use optional chaining safely
-const API_URL = (import.meta.env?.VITE_API_URL || 'http://localhost:3000').replace(/\/$/, '');
+const API_URL = (import.meta.env?.VITE_API_URL || 'https://campusbytes.onrender.com').replace(/\/$/, '');
+
+const USER_STORAGE_KEY = 'cb_user';
 
 export const apiDb = {
   init: () => {
     console.log(`Initializing API Mode connecting to: ${API_URL}`);
   },
 
-  // --- AUTH (Handled purely client-side/Google for now, backend just stores ID) ---
+  // --- AUTH ---
   login: async (userData?: Partial<User>): Promise<User> => {
-    // We accept the user data passed from Google/Form
-    // In a complex app, you'd POST /api/auth/login here to get a session token
-    return {
-      id: userData?.id || 'guest',
+    // 1. Create the user object (Simulating a login response)
+    const user: User = {
+      id: userData?.id || 'guest_' + Date.now(),
       name: userData?.name || 'Guest',
       email: userData?.email || '',
-      avatar: userData?.avatar || ''
+      avatar: userData?.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${userData?.name || 'Guest'}`
     };
+
+    // 2. PERSIST SESSION (Crucial for staying logged in)
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+    
+    return user;
   },
 
   logout: async () => {
-    // Clear local session
+    // 3. CLEAR SESSION
+    localStorage.removeItem(USER_STORAGE_KEY);
   },
 
   getCurrentUser: (): User | null => {
-    // Rely on local storage persistence handled by the main app state or storage.ts wrapper
-    // For this simple architecture, we just return null and let the UI handle re-login if needed
-    // or relies on the storage wrapper's localStorage cache.
-    return null; 
+    // 4. REHYDRATE SESSION
+    const stored = localStorage.getItem(USER_STORAGE_KEY);
+    return stored ? JSON.parse(stored) : null;
   },
 
   // --- DATA ---
@@ -53,7 +59,6 @@ export const apiDb = {
   },
 
   getOrderById: async (id: string): Promise<Order | null> => {
-    // Fetch all and filter since backend doesn't expose specific ID endpoint yet
     try {
       const res = await fetch(`${API_URL}/api/orders`);
       if (!res.ok) return null;
@@ -97,7 +102,7 @@ export const apiDb = {
   },
   
   subscribeToOrders: (callback: (orders: Order[]) => void) => {
-    // Polling for API mode
+    // Polling for API mode (fetches every 3 seconds)
     const interval = setInterval(async () => {
       try {
         const res = await fetch(`${API_URL}/api/orders`);
