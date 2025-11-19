@@ -1,0 +1,5 @@
+{
+  "name": "CampusBytes",
+  "description": "A simple, realtime digital ordering system for campus stalls. Features a Customer PWA for ordering and a Vendor Dashboard for queue management.",
+  "requestFramePermissions": []
+}
