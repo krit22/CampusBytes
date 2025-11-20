@@ -569,7 +569,7 @@ export const CustomerApp: React.FC = () => {
                     if (items.length === 0) return null;
 
                     return (
-                        <div key={cat} ref={el => categoryRefs.current[cat] = el} className="scroll-mt-36">
+                        <div key={cat} ref={el => { categoryRefs.current[cat] = el; }} className="scroll-mt-36">
                             <h2 className="text-lg font-bold text-slate-800 mb-3 px-1">{cat}</h2>
                             <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden divide-y divide-slate-50">
                                 {items.map(item => (
