@@ -13,7 +13,7 @@ const STORAGE_KEYS = {
 // Check Environment Variables
 const USE_FIREBASE = import.meta.env?.VITE_USE_FIREBASE === 'true';
 // Default to TRUE if we want to force the backend integration now
-const USE_API = import.meta.env?.VITE_USE_API === 'true' || true; 
+const USE_API = import.meta.env?.VITE_USE_API === 'true' || (import.meta.env?.VITE_USE_API === undefined && false); 
 
 // ------------------------------------------------------------------
 // MOCK IMPLEMENTATION (Local Storage)
@@ -89,6 +89,16 @@ const mockDb = {
     await delay(300);
     const data = localStorage.getItem(STORAGE_KEYS.MENU);
     return data ? JSON.parse(data) : [];
+  },
+  
+  updateMenuItemStatus: async (itemId: string, isAvailable: boolean): Promise<void> => {
+    await delay(200);
+    const menu = await mockDb.getMenu();
+    const index = menu.findIndex(m => m.id === itemId);
+    if (index !== -1) {
+      menu[index].isAvailable = isAvailable;
+      localStorage.setItem(STORAGE_KEYS.MENU, JSON.stringify(menu));
+    }
   },
 
   getOrders: async (): Promise<Order[]> => {

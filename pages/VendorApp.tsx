@@ -1,15 +1,16 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import { db } from '../services/storage';
-import { Order, OrderStatus, PaymentStatus } from '../types';
+import { Order, OrderStatus, PaymentStatus, MenuItem } from '../types';
 import { Badge } from '../components/Badge';
-import { RefreshCw, CheckCircle, Clock, Check, X, DollarSign, User } from 'lucide-react';
+import { RefreshCw, CheckCircle, Clock, Check, X, DollarSign, User, UtensilsCrossed, Power, Edit3 } from 'lucide-react';
 
 export const VendorApp: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [pin, setPin] = useState('');
   const [orders, setOrders] = useState<Order[]>([]);
-  const [filter, setFilter] = useState<'ALL' | 'ACTIVE' | 'DONE'>('ACTIVE');
+  const [menu, setMenu] = useState<MenuItem[]>([]);
+  const [filter, setFilter] = useState<'ALL' | 'ACTIVE' | 'DONE' | 'MENU'>('ACTIVE');
 
   // Auth Mock
   const handleLogin = (e: React.FormEvent) => {
@@ -24,14 +25,24 @@ export const VendorApp: React.FC = () => {
 
   useEffect(() => {
     if (isAuthenticated) {
+      // Subscribe to Orders
       const unsubscribe = db.subscribeToOrders((newOrders) => {
         // Sort by time descending (newest first)
         const sorted = [...newOrders].sort((a, b) => b.createdAt - a.createdAt);
         setOrders(sorted);
       });
+      
+      // Fetch Menu
+      loadMenu();
+
       return () => unsubscribe();
     }
   }, [isAuthenticated]);
+
+  const loadMenu = async () => {
+    const items = await db.getMenu();
+    setMenu(items);
+  };
 
   const handleStatusUpdate = async (orderId: string, status: OrderStatus) => {
     await db.updateOrderStatus(orderId, status);
@@ -49,10 +60,24 @@ export const VendorApp: React.FC = () => {
     // 2. Mark as DELIVERED (Moves to Completed Tab)
     await db.updateOrderStatus(order.id, OrderStatus.DELIVERED);
   };
+  
+  const toggleItemAvailability = async (item: MenuItem) => {
+      const newStatus = !item.isAvailable;
+      // Optimistic update
+      setMenu(prev => prev.map(m => m.id === item.id ? { ...m, isAvailable: newStatus } : m));
+      try {
+          await db.updateMenuItemStatus(item.id, newStatus);
+      } catch (e) {
+          console.error("Failed to update item", e);
+          // Revert
+          setMenu(prev => prev.map(m => m.id === item.id ? { ...m, isAvailable: !newStatus } : m));
+      }
+  };
 
   const filteredOrders = useMemo(() => {
     if (filter === 'ALL') return orders;
     if (filter === 'DONE') return orders.filter(o => o.status === OrderStatus.DELIVERED || o.status === OrderStatus.CANCELLED);
+    if (filter === 'MENU') return [];
     // Active
     return orders.filter(o => o.status !== OrderStatus.DELIVERED && o.status !== OrderStatus.CANCELLED);
   }, [orders, filter]);
@@ -116,103 +141,132 @@ export const VendorApp: React.FC = () => {
         
         {/* Tabs */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex gap-6 overflow-x-auto">
-             {(['ACTIVE', 'DONE', 'ALL'] as const).map(f => (
+             {(['ACTIVE', 'DONE', 'ALL', 'MENU'] as const).map(f => (
                  <button
                     key={f}
                     onClick={() => setFilter(f)}
                     className={`py-3 text-sm font-semibold border-b-2 transition-colors whitespace-nowrap ${filter === f ? 'border-orange-600 text-orange-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
                  >
-                    {f === 'ACTIVE' ? 'Active Queue' : f === 'DONE' ? 'Completed' : 'All History'}
+                    {f === 'ACTIVE' ? 'Active Queue' : f === 'DONE' ? 'Completed' : f === 'ALL' ? 'All History' : 'Menu Control'}
                  </button>
              ))}
         </div>
       </header>
 
-      {/* Main Grid */}
+      {/* Main Content */}
       <main className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8">
-        {filteredOrders.length === 0 ? (
-            <div className="text-center py-20 text-slate-400">
-                <p className="text-lg">No orders in this view.</p>
-            </div>
+        
+        {/* Menu Management View */}
+        {filter === 'MENU' ? (
+           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {menu.map(item => (
+                 <div key={item.id} className={`bg-white p-4 rounded-xl border flex justify-between items-center transition-all ${!item.isAvailable ? 'opacity-60 grayscale border-slate-200' : 'border-orange-200 shadow-sm'}`}>
+                     <div>
+                         <h3 className="font-bold text-slate-800">{item.name}</h3>
+                         <p className="text-xs text-slate-500">{item.category} • ₹{item.price}</p>
+                         <div className={`mt-2 inline-flex text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${item.isAvailable ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                            {item.isAvailable ? 'In Stock' : 'Sold Out'}
+                         </div>
+                     </div>
+                     <button 
+                        onClick={() => toggleItemAvailability(item)}
+                        className={`p-3 rounded-full transition-colors ${item.isAvailable ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'bg-green-50 text-green-600 hover:bg-green-100'}`}
+                        title={item.isAvailable ? "Mark as Sold Out" : "Mark as Available"}
+                     >
+                        <Power size={24} />
+                     </button>
+                 </div>
+              ))}
+              <div className="md:col-span-2 lg:col-span-3 text-center pt-8 text-slate-400 text-sm">
+                  <p>Changes update instantly for all customers.</p>
+              </div>
+           </div>
         ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredOrders.map(order => (
-                <div key={order.id} className={`bg-white rounded-xl shadow-sm border flex flex-col overflow-hidden transition-all hover:shadow-md ${order.status === OrderStatus.NEW ? 'border-blue-200 ring-1 ring-blue-100' : 'border-slate-200'}`}>
-                    {/* Card Header */}
-                    <div className="p-4 border-b border-slate-50 bg-slate-50/50 flex justify-between items-start">
-                        <div>
-                            <div className="flex items-center gap-2 mb-1">
-                                <span className="font-mono text-2xl font-black text-slate-800">{order.token}</span>
-                                <Badge status={order.status} />
-                            </div>
-                            <div className="flex items-center gap-1 text-xs text-slate-600 font-medium mb-1">
-                              <User size={10} /> {order.customerName || 'Guest'}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                                {new Date(order.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} • {order.items.length} items
-                            </div>
-                        </div>
-                        <div className="text-right">
-                            <div className="font-bold text-slate-900 text-lg">₹{order.totalAmount}</div>
-                            <button 
-                                onClick={() => handlePaymentUpdate(order.id, order.paymentStatus === PaymentStatus.PAID ? PaymentStatus.PENDING : PaymentStatus.PAID)}
-                                className={`text-xs px-2 py-1 rounded border flex items-center gap-1 mt-1 transition-colors ${order.paymentStatus === PaymentStatus.PAID ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-yellow-50 border-yellow-200 text-yellow-700'}`}
-                            >
-                                {order.paymentStatus === PaymentStatus.PAID ? <Check size={12} /> : <DollarSign size={12} />}
-                                {order.paymentStatus}
-                            </button>
-                            <div className="text-[10px] text-slate-400 mt-0.5 font-mono uppercase">{order.paymentMethod}</div>
-                        </div>
-                    </div>
-
-                    {/* Items List */}
-                    <div className="p-4 flex-1 space-y-2">
-                        {order.items.map((item, idx) => (
-                            <div key={idx} className="flex justify-between items-start text-sm">
-                                <span className="font-medium text-slate-700"><span className="font-bold text-slate-900">{item.quantity}x</span> {item.name}</span>
-                            </div>
-                        ))}
-                    </div>
-
-                    {/* Actions Footer */}
-                    <div className="p-3 bg-slate-50 border-t border-slate-100 grid grid-cols-2 gap-2">
-                         {/* State Transition Logic */}
-                         {order.status === OrderStatus.NEW && (
-                             <button 
-                                onClick={() => handleStatusUpdate(order.id, OrderStatus.COOKING)}
-                                className="col-span-2 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-semibold text-sm transition-colors"
-                             >
-                                Accept & Cook
-                             </button>
-                         )}
-
-                        {order.status === OrderStatus.COOKING && (
-                             <button 
-                                onClick={() => handleStatusUpdate(order.id, OrderStatus.READY)}
-                                className="col-span-2 bg-orange-500 hover:bg-orange-600 text-white py-2 rounded-lg font-semibold text-sm transition-colors"
-                             >
-                                Mark Ready
-                             </button>
-                         )}
-
-                        {order.status === OrderStatus.READY && (
-                             <button 
-                                onClick={() => handleCompleteOrder(order)}
-                                className="col-span-2 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-2"
-                             >
-                                Complete Order (Paid)
-                             </button>
-                         )}
-
-                         {(order.status === OrderStatus.DELIVERED || order.status === OrderStatus.CANCELLED) && (
-                             <div className="col-span-2 text-center text-xs text-slate-400 py-2">
-                                 Order Closed
-                             </div>
-                         )}
-                    </div>
+            /* Orders Grid */
+            filteredOrders.length === 0 ? (
+                <div className="text-center py-20 text-slate-400">
+                    <p className="text-lg">No orders in this view.</p>
                 </div>
-            ))}
-            </div>
+            ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredOrders.map(order => (
+                    <div key={order.id} className={`bg-white rounded-xl shadow-sm border flex flex-col overflow-hidden transition-all hover:shadow-md ${order.status === OrderStatus.NEW ? 'border-blue-200 ring-1 ring-blue-100' : 'border-slate-200'}`}>
+                        {/* Card Header */}
+                        <div className="p-4 border-b border-slate-50 bg-slate-50/50 flex justify-between items-start">
+                            <div>
+                                <div className="flex items-center gap-2 mb-1">
+                                    <span className="font-mono text-2xl font-black text-slate-800">{order.token}</span>
+                                    <Badge status={order.status} />
+                                </div>
+                                <div className="flex items-center gap-1 text-xs text-slate-600 font-medium mb-1">
+                                <User size={10} /> {order.customerName || 'Guest'}
+                                </div>
+                                <div className="text-xs text-slate-500">
+                                    {new Date(order.createdAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} • {order.items.length} items
+                                </div>
+                            </div>
+                            <div className="text-right">
+                                <div className="font-bold text-slate-900 text-lg">₹{order.totalAmount}</div>
+                                <button 
+                                    onClick={() => handlePaymentUpdate(order.id, order.paymentStatus === PaymentStatus.PAID ? PaymentStatus.PENDING : PaymentStatus.PAID)}
+                                    className={`text-xs px-2 py-1 rounded border flex items-center gap-1 mt-1 transition-colors ${order.paymentStatus === PaymentStatus.PAID ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-yellow-50 border-yellow-200 text-yellow-700'}`}
+                                >
+                                    {order.paymentStatus === PaymentStatus.PAID ? <Check size={12} /> : <DollarSign size={12} />}
+                                    {order.paymentStatus}
+                                </button>
+                                <div className="text-[10px] text-slate-400 mt-0.5 font-mono uppercase">{order.paymentMethod}</div>
+                            </div>
+                        </div>
+
+                        {/* Items List */}
+                        <div className="p-4 flex-1 space-y-2">
+                            {order.items.map((item, idx) => (
+                                <div key={idx} className="flex justify-between items-start text-sm">
+                                    <span className="font-medium text-slate-700"><span className="font-bold text-slate-900">{item.quantity}x</span> {item.name}</span>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Actions Footer */}
+                        <div className="p-3 bg-slate-50 border-t border-slate-100 grid grid-cols-2 gap-2">
+                            {/* State Transition Logic */}
+                            {order.status === OrderStatus.NEW && (
+                                <button 
+                                    onClick={() => handleStatusUpdate(order.id, OrderStatus.COOKING)}
+                                    className="col-span-2 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-semibold text-sm transition-colors"
+                                >
+                                    Accept & Cook
+                                </button>
+                            )}
+
+                            {order.status === OrderStatus.COOKING && (
+                                <button 
+                                    onClick={() => handleStatusUpdate(order.id, OrderStatus.READY)}
+                                    className="col-span-2 bg-orange-500 hover:bg-orange-600 text-white py-2 rounded-lg font-semibold text-sm transition-colors"
+                                >
+                                    Mark Ready
+                                </button>
+                            )}
+
+                            {order.status === OrderStatus.READY && (
+                                <button 
+                                    onClick={() => handleCompleteOrder(order)}
+                                    className="col-span-2 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-semibold text-sm transition-colors flex items-center justify-center gap-2"
+                                >
+                                    Complete Order (Paid)
+                                </button>
+                            )}
+
+                            {(order.status === OrderStatus.DELIVERED || order.status === OrderStatus.CANCELLED) && (
+                                <div className="col-span-2 text-center text-xs text-slate-400 py-2">
+                                    Order Closed
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                ))}
+                </div>
+            )
         )}
       </main>
     </div>

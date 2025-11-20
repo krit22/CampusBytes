@@ -96,7 +96,36 @@ export const firebaseDb = {
 
   // --- DATA ---
   getMenu: async (): Promise<MenuItem[]> => {
-    return INITIAL_MENU;
+    if (!firestore) return INITIAL_MENU;
+    
+    try {
+      const menuCollection = collection(firestore, 'menu');
+      const snapshot = await getDocs(menuCollection);
+      
+      if (snapshot.empty) {
+        // Seed initial menu
+        const promises = INITIAL_MENU.map(item => {
+           // remove id as firestore creates it, or use it as doc id? 
+           // simple addDoc creates auto id
+           const { id, ...data } = item;
+           return addDoc(menuCollection, data);
+        });
+        await Promise.all(promises);
+        // refetch or return initial
+        return INITIAL_MENU; // Next load will have ids
+      }
+      
+      return snapshot.docs.map(d => ({ id: d.id, ...d.data() } as MenuItem));
+    } catch (e) {
+      console.error("Error getting menu:", e);
+      return INITIAL_MENU;
+    }
+  },
+
+  updateMenuItemStatus: async (itemId: string, isAvailable: boolean) => {
+    if (!firestore) return;
+    const itemRef = doc(firestore, 'menu', itemId);
+    await updateDoc(itemRef, { isAvailable });
   },
 
   getOrders: async (): Promise<Order[]> => {

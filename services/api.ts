@@ -45,6 +45,14 @@ export const apiDb = {
     if (!res.ok) throw new Error('Failed to fetch menu');
     return res.json();
   },
+  
+  updateMenuItemStatus: async (itemId: string, isAvailable: boolean): Promise<void> => {
+    await fetch(`${API_URL}/api/menu/${itemId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ isAvailable })
+    });
+  },
 
   getOrders: async (): Promise<Order[]> => {
     const res = await fetch(`${API_URL}/api/orders`);

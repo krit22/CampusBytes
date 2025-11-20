@@ -143,7 +143,7 @@ export const CustomerApp: React.FC = () => {
       }
       return [...prev, { ...item, quantity: 1 }];
     });
-    setIsCartOpen(true);
+    // Removed setIsCartOpen(true) to prevent popup
   };
 
   const updateQuantity = (itemId: string, delta: number) => {
@@ -495,30 +495,37 @@ export const CustomerApp: React.FC = () => {
         {isLoading ? (
              <div className="flex justify-center py-20 text-slate-400 animate-pulse">Loading menu...</div>
         ) : (
-            categories.map(cat => (
-            <div key={cat}>
-                <h2 className="text-lg font-bold text-slate-800 mb-4 px-1">{cat}</h2>
-                <div className="space-y-4">
-                {menu.filter(m => m.category === cat).map(item => (
-                    <div key={item.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-start gap-4">
-                        <div className="flex-1">
-                            <div className="flex items-center gap-2 mb-1">
-                                <h3 className="font-bold text-slate-800">{item.name}</h3>
+            categories.map(cat => {
+              // Filter only available items
+              const catItems = menu.filter(m => m.category === cat && m.isAvailable);
+              
+              if (catItems.length === 0) return null;
+
+              return (
+                <div key={cat}>
+                    <h2 className="text-lg font-bold text-slate-800 mb-4 px-1">{cat}</h2>
+                    <div className="space-y-4">
+                    {catItems.map(item => (
+                        <div key={item.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-start gap-4">
+                            <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <h3 className="font-bold text-slate-800">{item.name}</h3>
+                                </div>
+                                <p className="text-xs text-slate-500 line-clamp-2 mb-3">{item.description}</p>
+                                <div className="font-bold text-slate-900">₹{item.price}</div>
                             </div>
-                            <p className="text-xs text-slate-500 line-clamp-2 mb-3">{item.description}</p>
-                            <div className="font-bold text-slate-900">₹{item.price}</div>
+                            <button 
+                                onClick={() => addToCart(item)}
+                                className="bg-orange-50 hover:bg-orange-100 text-orange-700 font-semibold text-sm px-4 py-2 rounded-lg transition-colors self-end"
+                            >
+                                Add
+                            </button>
                         </div>
-                        <button 
-                            onClick={() => addToCart(item)}
-                            className="bg-orange-50 hover:bg-orange-100 text-orange-700 font-semibold text-sm px-4 py-2 rounded-lg transition-colors self-end"
-                        >
-                            Add
-                        </button>
+                    ))}
                     </div>
-                ))}
                 </div>
-            </div>
-            ))
+              );
+            })
         )}
       </main>
 
