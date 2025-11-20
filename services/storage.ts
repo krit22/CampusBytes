@@ -1,6 +1,5 @@
 
 import { MenuItem, Order, OrderStatus, PaymentStatus, User } from '../types';
-import { firebaseDb } from './firebase';
 import { apiDb } from './api';
 
 // Constants
@@ -11,8 +10,7 @@ const STORAGE_KEYS = {
 };
 
 // Check Environment Variables
-const USE_FIREBASE = import.meta.env?.VITE_USE_FIREBASE === 'true';
-// Default to TRUE if we want to force the backend integration now
+// Default to API if explicitly set, otherwise check if we want to use mock
 const USE_API = import.meta.env?.VITE_USE_API === 'true' || (import.meta.env?.VITE_USE_API === undefined && false); 
 
 // ------------------------------------------------------------------
@@ -195,8 +193,8 @@ String.prototype.hashCode = function() {
 // EXPORT
 // ------------------------------------------------------------------
 
-// Priority: API > Firebase > Mock
-export const db = USE_API ? apiDb : (USE_FIREBASE ? firebaseDb : mockDb);
+// Priority: API > Mock (Firebase removed)
+export const db = USE_API ? apiDb : mockDb;
 
 // Initialize the chosen DB
 db.init();
