@@ -3,7 +3,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { db } from '../services/storage';
 import { Order, OrderStatus, PaymentStatus, MenuItem } from '../types';
 import { Badge } from '../components/Badge';
-import { RefreshCw, Check, DollarSign, User, Power, RotateCcw, ChevronRight, Play, CheckCircle2, Utensils, PackageCheck, Clock, BellRing, ChefHat, Search, Filter } from 'lucide-react';
+import { RefreshCw, Check, DollarSign, User, Power, RotateCcw, ChevronRight, Play, CheckCircle2, Utensils, PackageCheck, Clock, BellRing, ChefHat, Search, Filter, Menu as MenuIcon } from 'lucide-react';
 
 export const VendorApp: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -192,15 +192,15 @@ export const VendorApp: React.FC = () => {
   }
 
   const TABS = [
-      { id: 'NEW', label: 'Pending', icon: BellRing, count: counts[OrderStatus.NEW], color: 'text-blue-600', border: 'border-blue-600' },
-      { id: 'COOKING', label: 'Preparing', icon: ChefHat, count: counts[OrderStatus.COOKING], color: 'text-orange-600', border: 'border-orange-600' },
-      { id: 'READY', label: 'Serving', icon: Utensils, count: counts[OrderStatus.READY], color: 'text-green-600', border: 'border-green-600' },
-      { id: 'HISTORY', label: 'History', icon: Clock, count: counts.history, color: 'text-slate-600', border: 'border-slate-600' },
-      { id: 'MENU', label: 'Menu', icon: PackageCheck, count: 0, color: 'text-purple-600', border: 'border-purple-600' },
+      { id: 'NEW', label: 'Pending', mobileLabel: 'Pending', icon: BellRing, count: counts[OrderStatus.NEW], color: 'text-blue-600', border: 'border-blue-600', bg: 'bg-blue-50' },
+      { id: 'COOKING', label: 'Kitchen', mobileLabel: 'Prep', icon: ChefHat, count: counts[OrderStatus.COOKING], color: 'text-orange-600', border: 'border-orange-600', bg: 'bg-orange-50' },
+      { id: 'READY', label: 'Serving', mobileLabel: 'Serve', icon: Utensils, count: counts[OrderStatus.READY], color: 'text-green-600', border: 'border-green-600', bg: 'bg-green-50' },
+      { id: 'HISTORY', label: 'History', mobileLabel: 'Done', icon: Clock, count: counts.history, color: 'text-slate-600', border: 'border-slate-600', bg: 'bg-slate-50' },
+      { id: 'MENU', label: 'Menu', mobileLabel: 'Menu', icon: MenuIcon, count: 0, color: 'text-purple-600', border: 'border-purple-600', bg: 'bg-purple-50' },
   ] as const;
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col">
+    <div className="min-h-screen bg-slate-100 flex flex-col pb-20 sm:pb-0">
       {/* Top Bar */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -216,14 +216,14 @@ export const VendorApp: React.FC = () => {
           </div>
         </div>
         
-        {/* Tab Navigation */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex overflow-x-auto gap-6 scrollbar-hide">
+        {/* Desktop Tab Navigation (Hidden on mobile) */}
+        <div className="hidden sm:block max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 bg-white border-t border-slate-50">
+            <div className="flex justify-center">
              {TABS.map(tab => (
                  <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`group flex items-center gap-2 py-3 text-sm font-bold border-b-[3px] transition-all whitespace-nowrap px-1 ${activeTab === tab.id ? `${tab.border} ${tab.color}` : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                    className={`group flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold border-b-[3px] transition-all whitespace-nowrap px-4 max-w-[160px] ${activeTab === tab.id ? `${tab.border} ${tab.color}` : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
                  >
                     <tab.icon size={18} className={activeTab === tab.id ? 'stroke-[2.5px]' : 'stroke-2'} />
                     {tab.label}
@@ -245,7 +245,7 @@ export const VendorApp: React.FC = () => {
         {activeTab === 'MENU' ? (
            <div className="space-y-6 animate-in fade-in duration-500">
               {/* Controls */}
-              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-4 sticky top-[140px] z-10 md:static">
+              <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 space-y-4 sticky top-[80px] sm:top-[140px] z-10">
                   <div className="flex flex-col md:flex-row gap-4">
                       <div className="relative flex-1">
                           <Search className="absolute left-3 top-3 text-slate-400" size={20} />
@@ -257,13 +257,13 @@ export const VendorApp: React.FC = () => {
                             className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-orange-500 focus:ring-0 outline-none transition-all"
                           />
                       </div>
-                      <div className="flex items-center gap-4 px-4 py-2 bg-slate-50 rounded-xl border border-slate-200">
-                          <div className="flex items-center gap-2 text-xs font-bold text-green-700">
+                      <div className="flex items-center gap-4 px-4 py-2 bg-slate-50 rounded-xl border border-slate-200 overflow-x-auto">
+                          <div className="flex items-center gap-2 text-xs font-bold text-green-700 whitespace-nowrap">
                              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                              In Stock: {menu.filter(m => m.isAvailable).length}
                           </div>
                           <div className="w-px h-4 bg-slate-300"></div>
-                          <div className="flex items-center gap-2 text-xs font-bold text-red-700">
+                          <div className="flex items-center gap-2 text-xs font-bold text-red-700 whitespace-nowrap">
                              <div className="w-2 h-2 bg-red-500 rounded-full"></div>
                              Sold Out: {menu.filter(m => !m.isAvailable).length}
                           </div>
@@ -454,6 +454,36 @@ export const VendorApp: React.FC = () => {
             )
         )}
       </main>
+
+      {/* Mobile Bottom Navigation */}
+      <nav className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 z-50 pb-safe shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+          <div className="grid grid-cols-5 h-16">
+              {TABS.map(tab => {
+                  const isActive = activeTab === tab.id;
+                  return (
+                      <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id)}
+                        className={`relative flex flex-col items-center justify-center gap-1 transition-all duration-200 ${isActive ? 'text-slate-900' : 'text-slate-400 hover:text-slate-500'}`}
+                      >
+                          {isActive && (
+                              <div className={`absolute top-0 left-0 right-0 h-1 ${tab.bg.replace('bg-', 'bg-').replace('50', '500')} rounded-b-full mx-4`}></div>
+                          )}
+                          
+                          <div className="relative">
+                              <tab.icon size={20} className={isActive ? 'fill-current opacity-20 stroke-[2.5px]' : 'stroke-2'} />
+                              {tab.count > 0 && tab.id !== 'MENU' && (
+                                  <span className={`absolute -top-1.5 -right-2 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[9px] font-bold flex items-center justify-center rounded-full border border-white`}>
+                                      {tab.count}
+                                  </span>
+                              )}
+                          </div>
+                          <span className={`text-[10px] font-bold ${isActive ? 'scale-105' : ''}`}>{tab.mobileLabel}</span>
+                      </button>
+                  );
+              })}
+          </div>
+      </nav>
     </div>
   );
 };
