@@ -3,7 +3,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { db } from '../services/storage';
 import { Order, OrderStatus, PaymentStatus, MenuItem } from '../types';
 import { Badge } from '../components/Badge';
-import { RefreshCw, Check, DollarSign, User, Power, RotateCcw, ChevronRight, Play, CheckCircle2, Utensils, PackageCheck, Clock, BellRing, ChefHat, Search, Filter, Menu as MenuIcon, LogOut } from 'lucide-react';
+import { RefreshCw, Check, DollarSign, User, Power, RotateCcw, ChevronRight, Play, CheckCircle2, Utensils, PackageCheck, Clock, BellRing, ChefHat, Search, Filter, Menu as MenuIcon, LogOut, Lock } from 'lucide-react';
 
 export const VendorApp: React.FC = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -174,15 +174,16 @@ export const VendorApp: React.FC = () => {
       );
   };
 
+  // DARK MODE LOGIN SCREEN (Visual Proof of New Version)
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-100 px-4">
-        <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-sm text-center">
-          <div className="w-16 h-16 bg-slate-900 text-white rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg">
-             <RefreshCw size={32} />
+      <div className="min-h-screen flex items-center justify-center bg-slate-950 px-4">
+        <div className="bg-slate-900 border border-slate-800 p-8 rounded-2xl shadow-2xl w-full max-w-sm text-center">
+          <div className="w-16 h-16 bg-orange-600 text-white rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-orange-900/50 transform -rotate-6">
+             <Lock size={32} />
           </div>
-          <h1 className="text-2xl font-bold text-slate-900 mb-2">Vendor Portal</h1>
-          <p className="text-slate-500 mb-6">Enter PIN to manage orders.</p>
+          <h1 className="text-2xl font-black text-white mb-2 tracking-tight">Vendor Access</h1>
+          <p className="text-slate-400 mb-8">Secure Terminal v2.0</p>
           <form onSubmit={handleLogin} className="space-y-4">
             <input
               type="password"
@@ -190,15 +191,15 @@ export const VendorApp: React.FC = () => {
               maxLength={4}
               value={pin}
               onChange={(e) => setPin(e.target.value)}
-              className="w-full text-center text-3xl tracking-widest py-4 border-2 border-slate-200 rounded-xl focus:border-slate-900 focus:ring-0 outline-none transition-colors bg-slate-50 font-mono"
+              className="w-full text-center text-3xl tracking-[1em] py-4 border-2 border-slate-800 bg-slate-950 text-white rounded-xl focus:border-orange-500 focus:ring-0 outline-none transition-colors font-mono placeholder-slate-700"
               placeholder="••••"
               autoFocus
             />
-            <button type="submit" className="w-full bg-slate-900 text-white font-bold py-4 rounded-xl hover:bg-slate-800 transition-colors shadow-lg">
-              Access Dashboard
+            <button type="submit" className="w-full bg-orange-600 text-white font-bold py-4 rounded-xl hover:bg-orange-500 transition-all shadow-lg shadow-orange-900/20 active:scale-[0.98]">
+              Unlock Dashboard
             </button>
           </form>
-          <p className="mt-6 text-xs text-slate-400">Demo PIN: 1234</p>
+          <p className="mt-8 text-xs text-slate-600 font-mono">PIN: 1234</p>
         </div>
       </div>
     );
@@ -215,45 +216,48 @@ export const VendorApp: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col pb-24 sm:pb-0">
       {/* Top Bar - Dark Theme for Vendor to distinguish from Customer App */}
-      <header className="bg-slate-900 border-b border-slate-800 sticky top-0 z-20 shadow-md">
+      <header className="bg-slate-950 border-b border-slate-800 sticky top-0 z-20 shadow-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-             <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center text-white font-bold">
+             <div className="w-8 h-8 bg-orange-600 rounded-lg flex items-center justify-center text-white font-bold shadow-lg shadow-orange-900/50">
                  <ChefHat size={18} />
              </div>
              <div>
-                <h1 className="text-lg font-bold text-white leading-none">Admin</h1>
-                <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Dashboard</span>
+                <h1 className="text-lg font-bold text-white leading-none">CampusBytes</h1>
+                <div className="flex items-center gap-2">
+                   <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">Vendor</span>
+                   <span className="text-[9px] bg-slate-800 text-slate-300 px-1.5 py-px rounded border border-slate-700">v2.0</span>
+                </div>
              </div>
           </div>
           
           <div className="flex items-center gap-3">
              <button 
                 onClick={() => window.location.reload()} 
-                className="p-2 bg-slate-800 text-slate-300 rounded-full hover:bg-slate-700 transition-colors"
+                className="p-2 bg-slate-900 text-slate-400 rounded-full hover:bg-slate-800 hover:text-white transition-colors border border-slate-800"
                 title="Refresh"
              >
                  <RefreshCw size={18} />
              </button>
-             <div className="font-mono font-bold text-emerald-400 bg-emerald-950/50 px-3 py-1.5 rounded-lg border border-emerald-900/50 flex items-center gap-1">
+             <div className="font-mono font-bold text-emerald-400 bg-emerald-950/30 px-3 py-1.5 rounded-lg border border-emerald-900/50 flex items-center gap-1">
                  <DollarSign size={14} /> {totalRevenue}
              </div>
           </div>
         </div>
         
         {/* Desktop Tab Navigation (Hidden on mobile) */}
-        <div className="hidden sm:block max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 bg-slate-900">
+        <div className="hidden sm:block max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 bg-slate-950">
             <div className="flex justify-center">
              {TABS.map(tab => (
                  <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`group flex-1 flex items-center justify-center gap-2 py-4 text-sm font-bold border-b-[3px] transition-all whitespace-nowrap px-4 max-w-[160px] ${activeTab === tab.id ? `${tab.border} ${tab.color} bg-slate-800` : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-800/50'}`}
+                    className={`group flex-1 flex items-center justify-center gap-2 py-4 text-sm font-bold border-b-[3px] transition-all whitespace-nowrap px-4 max-w-[160px] ${activeTab === tab.id ? `${tab.border} ${tab.color} bg-slate-900` : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-900/50'}`}
                  >
                     <tab.icon size={18} className={activeTab === tab.id ? 'stroke-[2.5px]' : 'stroke-2'} />
                     {tab.label}
                     {tab.id !== 'MENU' && (
-                        <span className={`ml-1 px-2 py-0.5 rounded-full text-xs ${activeTab === tab.id ? 'bg-slate-700 text-white' : 'bg-slate-800 text-slate-500 group-hover:bg-slate-700 group-hover:text-slate-300'}`}>
+                        <span className={`ml-1 px-2 py-0.5 rounded-full text-xs ${activeTab === tab.id ? 'bg-slate-800 text-white' : 'bg-slate-900 text-slate-600 group-hover:bg-slate-800 group-hover:text-slate-300'}`}>
                             {tab.count}
                         </span>
                     )}
@@ -292,7 +296,7 @@ export const VendorApp: React.FC = () => {
                             onClick={() => scrollToCategory(cat)}
                             className={`px-3 py-1.5 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${
                                 selectedMenuCategory === cat 
-                                ? 'bg-slate-800 text-white shadow-md' 
+                                ? 'bg-slate-900 text-white shadow-md' 
                                 : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'
                             }`}
                           >
