@@ -1,3 +1,4 @@
+
 export enum OrderStatus {
   NEW = 'NEW',
   COOKING = 'COOKING',
@@ -19,6 +20,7 @@ export interface MenuItem {
   category: string;
   image?: string;
   isAvailable: boolean;
+  isBestseller?: boolean;
 }
 
 export interface CartItem extends MenuItem {

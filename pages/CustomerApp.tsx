@@ -1,6 +1,6 @@
 
-import React, { useEffect, useState } from 'react';
-import { ShoppingBag, Utensils, Clock, LogOut, ChevronRight, User as UserIcon, Mail, ArrowRight } from 'lucide-react';
+import React, { useEffect, useState, useRef } from 'react';
+import { ShoppingBag, Utensils, Clock, LogOut, ChevronRight, User as UserIcon, Mail, ArrowRight, Search, Star, Flame } from 'lucide-react';
 import { MenuItem, CartItem, Order, OrderStatus, User } from '../types';
 import { db, parseJwt } from '../services/storage';
 import { CartSheet } from '../components/CartSheet';
@@ -21,6 +21,11 @@ export const CustomerApp: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [focusedOrder, setFocusedOrder] = useState<Order | null>(null);
+  
+  // Menu UI States
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('All');
+  const categoryRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
   
   // Login UI States
   const [showEmailForm, setShowEmailForm] = useState(false);
@@ -186,6 +191,13 @@ export const CustomerApp: React.FC = () => {
         alert("Failed to cancel order. Please try again.");
       }
     }
+  };
+  
+  const scrollToCategory = (cat: string) => {
+      setSelectedCategory(cat);
+      if (categoryRefs.current[cat]) {
+          categoryRefs.current[cat]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
   };
 
   // --- RENDER VIEWS ---
@@ -425,107 +437,161 @@ export const CustomerApp: React.FC = () => {
   }
 
   // --- MAIN MENU VIEW ---
-  const categories = Array.from(new Set(menu.map(m => m.category)));
+  const categories: string[] = Array.from(new Set(menu.map(m => m.category)));
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
   const activeOrdersCount = userOrders.filter(o => o.status !== OrderStatus.DELIVERED && o.status !== OrderStatus.CANCELLED).length;
+  const bestsellers = menu.filter(m => m.isBestseller && m.isAvailable);
+  
+  const filteredMenu = menu.filter(m => {
+      const matchesSearch = m.name.toLowerCase().includes(searchQuery.toLowerCase()) || m.category.toLowerCase().includes(searchQuery.toLowerCase());
+      const matchesCategory = selectedCategory === 'All' || m.category === selectedCategory;
+      return m.isAvailable && matchesSearch && (searchQuery ? true : matchesCategory);
+  });
+
+  // If searching, group by category of filtered items. If not searching, categories are handled by scroll
+  const displayCategories: string[] = searchQuery 
+    ? Array.from(new Set(filteredMenu.map(m => m.category))) 
+    : categories;
 
   return (
     <div className="min-h-screen pb-24 max-w-md mx-auto bg-slate-50 border-x border-slate-100 shadow-2xl">
       {/* Header */}
-      <header className="bg-white sticky top-0 z-10 px-5 py-4 border-b border-slate-100 flex justify-between items-center shadow-sm">
-        <div className="flex items-center gap-2">
-            <div className="bg-orange-100 p-2 rounded-lg text-orange-600">
-                <Utensils size={20} />
-            </div>
-            <div>
-                <h1 className="font-bold text-slate-800 leading-tight">CampusBytes</h1>
-                <p className="text-xs text-slate-500 max-w-[120px] truncate">Hello, {user?.name.split(' ')[0]}</p>
-            </div>
-        </div>
-        
-        <div className="flex items-center gap-2">
-            {/* Profile / History Button */}
-            <button 
-                onClick={() => setView('HISTORY')}
-                className="p-2 relative hover:bg-slate-50 rounded-full text-slate-500 border border-transparent hover:border-slate-200 transition-all"
-            >
-                {user?.avatar ? (
-                    <img src={user.avatar} alt="Profile" className="w-8 h-8 rounded-full object-cover" />
-                ) : (
-                    <UserIcon size={24} />
-                )}
-                {activeOrdersCount > 0 && (
-                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-white animate-pulse">
-                        {activeOrdersCount}
-                    </span>
-                )}
-            </button>
-            
-            {/* Logout tiny button */}
-            <button 
-                onClick={handleLogout}
-                className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
-            >
-                <LogOut size={20} />
-            </button>
-        </div>
-      </header>
-
-      {/* Menu */}
-      <main className="p-5 space-y-8">
-        {/* Active Order Banner if any */}
-        {activeOrdersCount > 0 && (
-            <div 
-                onClick={() => setView('HISTORY')}
-                className="bg-blue-600 text-white p-4 rounded-2xl shadow-lg shadow-blue-200 flex items-center justify-between cursor-pointer"
-            >
-                <div className="flex items-center gap-3">
-                    <div className="p-2 bg-white/20 rounded-lg">
-                        <Clock size={20} />
-                    </div>
-                    <div>
-                        <div className="font-bold text-sm">Order in Progress</div>
-                        <div className="text-xs opacity-90">You have {activeOrdersCount} active order(s)</div>
-                    </div>
+      <header className="bg-white sticky top-0 z-20 shadow-sm">
+          {/* Top Bar */}
+          <div className="px-5 py-3 border-b border-slate-100 flex justify-between items-center">
+            <div className="flex items-center gap-2">
+                <div className="bg-orange-100 p-2 rounded-lg text-orange-600">
+                    <Utensils size={20} />
                 </div>
-                <ChevronRight size={20} />
+                <div>
+                    <h1 className="font-bold text-slate-800 leading-tight">CampusBytes</h1>
+                    <p className="text-xs text-slate-500 max-w-[120px] truncate">Hello, {user?.name.split(' ')[0]}</p>
+                </div>
+            </div>
+            
+            <div className="flex items-center gap-2">
+                <button 
+                    onClick={() => setView('HISTORY')}
+                    className="p-2 relative hover:bg-slate-50 rounded-full text-slate-500 border border-transparent hover:border-slate-200 transition-all"
+                >
+                    <Clock size={22} />
+                    {activeOrdersCount > 0 && (
+                        <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center rounded-full border-2 border-white animate-pulse">
+                            {activeOrdersCount}
+                        </span>
+                    )}
+                </button>
+                <button 
+                    onClick={handleLogout}
+                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-full transition-colors"
+                >
+                    <LogOut size={20} />
+                </button>
+            </div>
+        </div>
+
+        {/* Search Bar */}
+        <div className="px-5 py-2 bg-white">
+            <div className="relative">
+                <Search size={18} className="absolute left-3 top-3 text-slate-400" />
+                <input 
+                    type="text" 
+                    placeholder="Search food (e.g. Maggi)" 
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-50 border border-slate-200 focus:border-orange-500 focus:ring-0 outline-none text-sm font-medium"
+                />
+            </div>
+        </div>
+
+        {/* Category Tabs (Sticky) - Only show if not searching */}
+        {!searchQuery && (
+            <div className="flex gap-2 overflow-x-auto px-5 py-2 pb-3 scrollbar-hide bg-white border-b border-slate-100">
+                {categories.map(cat => (
+                    <button
+                        key={cat}
+                        onClick={() => scrollToCategory(cat)}
+                        className="px-4 py-1.5 rounded-full text-sm font-bold whitespace-nowrap transition-all bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    >
+                        {cat}
+                    </button>
+                ))}
             </div>
         )}
+      </header>
 
+      {/* Menu Content */}
+      <main className="p-5 space-y-6">
+        
         {isLoading ? (
              <div className="flex justify-center py-20 text-slate-400 animate-pulse">Loading menu...</div>
         ) : (
-            categories.map(cat => {
-              // Filter only available items
-              const catItems = menu.filter(m => m.category === cat && m.isAvailable);
-              
-              if (catItems.length === 0) return null;
-
-              return (
-                <div key={cat}>
-                    <h2 className="text-lg font-bold text-slate-800 mb-4 px-1">{cat}</h2>
-                    <div className="space-y-4">
-                    {catItems.map(item => (
-                        <div key={item.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex justify-between items-start gap-4">
-                            <div className="flex-1">
-                                <div className="flex items-center gap-2 mb-1">
-                                    <h3 className="font-bold text-slate-800">{item.name}</h3>
+            <>
+                {/* Bestsellers Section - Only when not searching */}
+                {!searchQuery && bestsellers.length > 0 && (
+                    <div className="mb-6">
+                        <h2 className="flex items-center gap-2 text-lg font-bold text-slate-800 mb-4">
+                            <Flame size={20} className="text-orange-500 fill-orange-500" /> Bestsellers
+                        </h2>
+                        <div className="flex gap-4 overflow-x-auto pb-4 -mx-5 px-5 scrollbar-hide">
+                            {bestsellers.map(item => (
+                                <div key={item.id} className="min-w-[160px] bg-white p-3 rounded-2xl shadow-sm border border-orange-100 flex flex-col">
+                                    <div className="flex-1">
+                                        <h3 className="font-bold text-slate-800 text-sm line-clamp-2 mb-1">{item.name}</h3>
+                                        <div className="text-orange-600 font-bold text-sm">₹{item.price}</div>
+                                    </div>
+                                    <button 
+                                        onClick={() => addToCart(item)}
+                                        className="mt-3 w-full bg-orange-50 hover:bg-orange-100 text-orange-700 text-xs font-bold py-2 rounded-lg"
+                                    >
+                                        ADD
+                                    </button>
                                 </div>
-                                <p className="text-xs text-slate-500 line-clamp-2 mb-3">{item.description}</p>
-                                <div className="font-bold text-slate-900">₹{item.price}</div>
-                            </div>
-                            <button 
-                                onClick={() => addToCart(item)}
-                                className="bg-orange-50 hover:bg-orange-100 text-orange-700 font-semibold text-sm px-4 py-2 rounded-lg transition-colors self-end"
-                            >
-                                Add
-                            </button>
+                            ))}
                         </div>
-                    ))}
                     </div>
-                </div>
-              );
-            })
+                )}
+
+                {/* Menu List */}
+                {searchQuery && filteredMenu.length === 0 && (
+                    <div className="text-center py-10 text-slate-400">
+                        <p>No items found matching "{searchQuery}"</p>
+                    </div>
+                )}
+
+                {/* Categories Loop */}
+                {displayCategories.map(cat => {
+                    // If searching, use filtered list, else use full list
+                    const items = searchQuery 
+                        ? filteredMenu.filter(m => m.category === cat)
+                        : menu.filter(m => m.category === cat && m.isAvailable);
+                    
+                    if (items.length === 0) return null;
+
+                    return (
+                        <div key={cat} ref={el => categoryRefs.current[cat] = el} className="scroll-mt-36">
+                            <h2 className="text-lg font-bold text-slate-800 mb-3 px-1">{cat}</h2>
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden divide-y divide-slate-50">
+                                {items.map(item => (
+                                    <div key={item.id} className="p-4 flex justify-between items-center gap-3">
+                                        <div className="flex-1">
+                                            <h3 className="font-bold text-slate-800 text-sm">{item.name}</h3>
+                                            <p className="text-xs text-slate-400 mt-0.5 line-clamp-1">{item.description}</p>
+                                            <div className="text-sm font-bold text-slate-900 mt-1">₹{item.price}</div>
+                                        </div>
+                                        <button 
+                                            onClick={() => addToCart(item)}
+                                            className="shrink-0 bg-white border border-slate-200 text-orange-600 shadow-sm font-bold text-xs px-5 py-2 rounded-lg hover:bg-orange-50 hover:border-orange-200 active:scale-95 transition-all"
+                                        >
+                                            ADD
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })}
+            </>
         )}
       </main>
 

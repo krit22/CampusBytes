@@ -19,9 +19,9 @@ const USE_API = import.meta.env?.VITE_USE_API === 'true' || (import.meta.env?.VI
 
 const INITIAL_MENU: MenuItem[] = [
   // SNACKS
-  { id: 'm1', name: 'Tea', description: 'Hot Tea', price: 10, category: 'Snacks', isAvailable: true },
+  { id: 'm1', name: 'Tea', description: 'Hot Tea', price: 10, category: 'Snacks', isAvailable: true, isBestseller: true },
   { id: 'm2', name: 'Coffee', description: 'Hot Coffee', price: 10, category: 'Snacks', isAvailable: true },
-  { id: 'm3', name: 'Cold Coffee', description: 'Chilled coffee beverage', price: 50, category: 'Snacks', isAvailable: true },
+  { id: 'm3', name: 'Cold Coffee', description: 'Chilled coffee beverage', price: 50, category: 'Snacks', isAvailable: true, isBestseller: true },
   { id: 'm4', name: 'Fish Finger (4pcs)', description: 'Crispy fish fingers', price: 100, category: 'Snacks', isAvailable: true },
   { id: 'm5', name: 'Fish Cutlet', description: 'Fried fish cutlet', price: 60, category: 'Snacks', isAvailable: true },
   { id: 'm6', name: 'Potato Chips Roll (5pcs)', description: 'Crunchy potato rolls', price: 70, category: 'Snacks', isAvailable: true },
@@ -38,21 +38,21 @@ const INITIAL_MENU: MenuItem[] = [
   { id: 'm15', name: 'Fry Maggi', description: 'Stir fried Maggi', price: 40, category: 'Maggi', isAvailable: true },
   { id: 'm16', name: 'Fry Egg Maggi', description: 'Fried Maggi with egg', price: 50, category: 'Maggi', isAvailable: true },
   { id: 'm17', name: 'Fry Chicken Maggi', description: 'Fried Maggi with chicken', price: 60, category: 'Maggi', isAvailable: true },
-  { id: 'm18', name: 'Fry Egg Chicken Maggi', description: 'Fried Maggi with egg & chicken', price: 70, category: 'Maggi', isAvailable: true },
+  { id: 'm18', name: 'Fry Egg Chicken Maggi', description: 'Fried Maggi with egg & chicken', price: 70, category: 'Maggi', isAvailable: true, isBestseller: true },
 
   // ROLL
   { id: 'm19', name: 'Veg. Roll', description: 'Mixed vegetable roll', price: 30, category: 'Rolls', isAvailable: true },
   { id: 'm20', name: 'Paneer Roll', description: 'Spiced paneer roll', price: 60, category: 'Rolls', isAvailable: true },
   { id: 'm21', name: 'Egg Roll', description: 'Classic egg roll', price: 35, category: 'Rolls', isAvailable: true },
-  { id: 'm22', name: 'Chicken Roll', description: 'Juicy chicken roll', price: 60, category: 'Rolls', isAvailable: true },
-  { id: 'm23', name: 'Egg Chicken Roll', description: 'Chicken roll with egg', price: 70, category: 'Rolls', isAvailable: true },
+  { id: 'm22', name: 'Chicken Roll', description: 'Juicy chicken roll', price: 60, category: 'Rolls', isAvailable: true, isBestseller: true },
+  { id: 'm23', name: 'Egg Chicken Roll', description: 'Chicken roll with egg', price: 70, category: 'Rolls', isAvailable: true, isBestseller: true },
 
   // SANDWICH
   { id: 'm24', name: 'Veg. Sandwich', description: 'Vegetable filling', price: 35, category: 'Sandwich', isAvailable: true },
   { id: 'm25', name: 'Corn Sandwich', description: 'Sweet corn filling', price: 45, category: 'Sandwich', isAvailable: true },
   { id: 'm26', name: 'Paneer Sandwich', description: 'Paneer filling', price: 60, category: 'Sandwich', isAvailable: true },
   { id: 'm27', name: 'Egg Sandwich', description: 'Boiled egg filling', price: 45, category: 'Sandwich', isAvailable: true },
-  { id: 'm28', name: 'Chicken Sandwich', description: 'Chicken filling', price: 50, category: 'Sandwich', isAvailable: true },
+  { id: 'm28', name: 'Chicken Sandwich', description: 'Chicken filling', price: 50, category: 'Sandwich', isAvailable: true, isBestseller: true },
   { id: 'm29', name: 'Mix Sandwich', description: 'Mixed vegetable & meat', price: 70, category: 'Sandwich', isAvailable: true },
 
   // CHOWMEIN
@@ -64,7 +64,7 @@ const INITIAL_MENU: MenuItem[] = [
   // MOMO
   { id: 'm34', name: 'Veg. Momo', description: 'Steamed vegetable dumplings', price: 50, category: 'Momo', isAvailable: true },
   { id: 'm35', name: 'Veg. Fry Momo', description: 'Fried vegetable dumplings', price: 60, category: 'Momo', isAvailable: true },
-  { id: 'm36', name: 'Chicken Momo', description: 'Steamed chicken dumplings', price: 60, category: 'Momo', isAvailable: true },
+  { id: 'm36', name: 'Chicken Momo', description: 'Steamed chicken dumplings', price: 60, category: 'Momo', isAvailable: true, isBestseller: true },
   { id: 'm37', name: 'Chicken Fry Momo', description: 'Fried chicken dumplings', price: 70, category: 'Momo', isAvailable: true },
   { id: 'm38', name: 'Chicken Kurkure Momo', description: 'Crunchy fried momos', price: 80, category: 'Momo', isAvailable: true },
 
@@ -72,9 +72,9 @@ const INITIAL_MENU: MenuItem[] = [
   { id: 'm39', name: 'Veg. Fried Rice', description: 'Rice with mixed veggies', price: 70, category: 'Rice', isAvailable: true },
   { id: 'm40', name: 'Egg Fried Rice', description: 'Rice with scrambled egg', price: 80, category: 'Rice', isAvailable: true },
   { id: 'm41', name: 'Chicken Fried Rice', description: 'Rice with chicken chunks', price: 90, category: 'Rice', isAvailable: true },
-  { id: 'm42', name: 'Egg Chicken Fried Rice', description: 'Rice with egg & chicken', price: 100, category: 'Rice', isAvailable: true },
+  { id: 'm42', name: 'Egg Chicken Fried Rice', description: 'Rice with egg & chicken', price: 100, category: 'Rice', isAvailable: true, isBestseller: true },
 
-  // CHICKEN
+  // CHICKEN MAIN COURSE
   { id: 'm43', name: 'Chilly Chicken (8pcs)', description: 'Spicy Indo-Chinese chicken', price: 150, category: 'Chicken', isAvailable: true },
   { id: 'm44', name: 'Chicken Butter Masala (4pcs)', description: 'Rich creamy curry', price: 160, category: 'Chicken', isAvailable: true },
   { id: 'm45', name: 'Chicken Curry (4pcs)', description: 'Homestyle chicken curry', price: 120, category: 'Chicken', isAvailable: true },
