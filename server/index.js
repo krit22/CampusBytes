@@ -110,16 +110,22 @@ const INITIAL_MENU = [
 
 // --- ROUTES ---
 
-// Get Menu (Auto-seed if empty or old demo data)
+// Get Menu (Auto-seed / Update)
 app.get('/api/menu', async (req, res) => {
   try {
-    let count = await Menu.countDocuments();
-    
-    // If DB is empty OR has less than 50 items (implies old data), re-seed
-    if (count < 50) {
-      console.log('Seeding full menu with bestsellers...');
-      await Menu.deleteMany({}); // Clear old data
-      await Menu.insertMany(INITIAL_MENU);
+    // Sync DB with INITIAL_MENU (Upsert strategy)
+    // This ensures changes to prices/categories in code are reflected in DB,
+    // while preserving existing IDs.
+    const bulkOps = INITIAL_MENU.map(item => ({
+      updateOne: {
+        filter: { name: item.name },
+        update: { $set: item }, // Updates price, category, desc, bestseller status
+        upsert: true
+      }
+    }));
+
+    if (bulkOps.length > 0) {
+       await Menu.bulkWrite(bulkOps);
     }
     
     let items = await Menu.find();

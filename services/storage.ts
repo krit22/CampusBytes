@@ -105,9 +105,28 @@ export const parseJwt = (token: string): any => {
 
 const mockDb = {
   init: () => {
-    if (!localStorage.getItem(STORAGE_KEYS.MENU)) {
-      localStorage.setItem(STORAGE_KEYS.MENU, JSON.stringify(INITIAL_MENU));
+    // Merge Stored Status with Code Menu
+    // This allows you to update prices/names in code, while keeping the "Sold Out" status 
+    // you might have toggled in the UI.
+    const storedMenuJSON = localStorage.getItem(STORAGE_KEYS.MENU);
+    let finalMenu = INITIAL_MENU;
+
+    if (storedMenuJSON) {
+      const storedMenu = JSON.parse(storedMenuJSON) as MenuItem[];
+      finalMenu = INITIAL_MENU.map(codeItem => {
+        // Try to find the same item in storage (by ID)
+        const storedItem = storedMenu.find(s => s.id === codeItem.id);
+        // If found, keep its availability status, but use the Name/Price from code
+        if (storedItem) {
+          return { ...codeItem, isAvailable: storedItem.isAvailable };
+        }
+        return codeItem;
+      });
     }
+    
+    // Always overwrite with the merged result
+    localStorage.setItem(STORAGE_KEYS.MENU, JSON.stringify(finalMenu));
+
     if (!localStorage.getItem(STORAGE_KEYS.ORDERS)) {
       localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify([]));
     }
