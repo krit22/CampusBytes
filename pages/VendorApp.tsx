@@ -172,19 +172,21 @@ export const VendorApp: React.FC = () => {
 
   // --- HELPER: ORDER AGING STATUS ---
   const getOrderAgeStatus = (order: Order) => {
-    if (order.status === OrderStatus.DELIVERED || order.status === OrderStatus.CANCELLED) return 'NORMAL';
+    if (order.status === OrderStatus.DELIVERED || order.status === OrderStatus.CANCELLED || order.status === OrderStatus.NEW) return 'NORMAL';
 
     // Calculate elapsed time in minutes since last status update
     const elapsed = (currentTime - order.updatedAt) / 1000 / 60;
 
     if (order.status === OrderStatus.COOKING) {
         if (elapsed > 30) return 'CRITICAL'; // Red after 30m
-        if (elapsed > 15) return 'WARNING'; // Yellow after 15m
+        if (elapsed > 20) return 'URGENT';   // Orange after 20m
+        if (elapsed > 10) return 'WARNING';  // Yellow after 10m
     }
     
     if (order.status === OrderStatus.READY) {
-        if (elapsed > 20) return 'CRITICAL'; // Red after 20m
-        if (elapsed > 10) return 'WARNING'; // Yellow after 10m
+        if (elapsed > 15) return 'CRITICAL'; // Red after 15m
+        if (elapsed > 10) return 'URGENT';   // Orange after 10m
+        if (elapsed > 5) return 'WARNING';   // Yellow after 5m
     }
 
     return 'NORMAL';
@@ -318,7 +320,7 @@ export const VendorApp: React.FC = () => {
             <Lock className="text-white" size={32} />
           </div>
           <h1 className="text-2xl font-black text-white mb-2">Vendor Portal</h1>
-          <p className="text-slate-500 mb-8 text-sm font-mono">System v3.4 (Operations)</p>
+          <p className="text-slate-500 mb-8 text-sm font-mono">System v3.5 (Operations)</p>
           
           <form onSubmit={handleLogin} className="space-y-4">
             <input 
@@ -401,7 +403,7 @@ export const VendorApp: React.FC = () => {
               <h1 className="font-bold leading-none">CampusBytes</h1>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-[10px] font-mono text-slate-400">VENDOR</span>
-                <span className="text-[9px] bg-green-900 text-green-400 px-1.5 rounded border border-green-800">v3.4</span>
+                <span className="text-[9px] bg-green-900 text-green-400 px-1.5 rounded border border-green-800">v3.5</span>
               </div>
             </div>
           </div>
@@ -562,6 +564,7 @@ export const VendorApp: React.FC = () => {
                         className={`rounded-2xl shadow-sm border overflow-hidden flex flex-col animate-in slide-in-from-bottom-4 relative transition-colors duration-500
                             ${order.status === OrderStatus.CANCELLED ? 'bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-900' : 'bg-white dark:bg-slate-850'}
                             ${ageStatus === 'WARNING' ? 'border-yellow-300 dark:border-yellow-700 ring-1 ring-yellow-200 dark:ring-yellow-900/50' : ''}
+                            ${ageStatus === 'URGENT' ? 'border-orange-300 dark:border-orange-700 ring-1 ring-orange-200 dark:ring-orange-900/50 bg-orange-50/30 dark:bg-orange-900/10' : ''}
                             ${ageStatus === 'CRITICAL' ? 'border-red-300 dark:border-red-700 ring-1 ring-red-200 dark:ring-red-900/50 bg-red-50/30 dark:bg-red-900/10' : ''}
                             ${ageStatus === 'NORMAL' && order.status !== OrderStatus.CANCELLED ? 'border-slate-200 dark:border-slate-800' : ''}
                         `}
@@ -587,6 +590,7 @@ export const VendorApp: React.FC = () => {
                                 {order.status !== 'DELIVERED' && order.status !== 'CANCELLED' && (
                                     <div className={`text-[10px] font-mono px-1.5 py-0.5 rounded flex items-center gap-1 ${
                                         ageStatus === 'CRITICAL' ? 'bg-red-100 text-red-600 dark:bg-red-900/50 dark:text-red-300 font-bold animate-pulse' :
+                                        ageStatus === 'URGENT' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300 font-bold' :
                                         ageStatus === 'WARNING' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-300 font-bold' :
                                         'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
                                     }`}>
@@ -989,50 +993,45 @@ const StatsDashboard = ({ orders, revenue, onClose }: { orders: Order[], revenue
                          {topItemsData.length > 0 && (
                              <li className="flex gap-2">
                                 <span className="text-green-500">•</span> 
-                                <span>{topItemsData[0].name} is your star performer. Keep it in stock!</span>
+                                <span>{topItemsData[0].name} is your star performer. Keep it well stocked!</span>
                             </li>
                          )}
                     </ul>
                 </div>
-
             </div>
         </div>
     );
 };
 
-const AddMenuItemModal = ({ categories, onClose, onAdd }: any) => {
+const AddMenuItemModal = ({ categories, onClose, onAdd }: { categories: string[], onClose: () => void, onAdd: (item: Partial<MenuItem>) => void }) => {
     const [name, setName] = useState('');
     const [price, setPrice] = useState('');
-    const [category, setCategory] = useState(categories[1] || 'Snacks'); // Default to first actual category
+    const [category, setCategory] = useState(categories[1] || 'Snacks');
     const [description, setDescription] = useState('');
-
+    
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!name || !price) return;
         onAdd({
             name,
             price: Number(price),
             category,
-            description
+            description,
+            isAvailable: true
         });
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-slate-850 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
-                <div className="bg-slate-900 p-5 flex justify-between items-center">
-                    <h3 className="text-white font-bold text-lg">Add New Item</h3>
-                    <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20}/></button>
-                </div>
-                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-3xl p-6 shadow-2xl">
+                <h3 className="text-xl font-black mb-4 dark:text-white">Add Menu Item</h3>
+                <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Item Name</label>
                         <input 
-                            className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:border-orange-500 outline-none dark:text-white"
-                            placeholder="e.g. Special Burger"
+                            className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-orange-500 dark:text-white"
+                            required
                             value={name}
                             onChange={e => setName(e.target.value)}
-                            required
                         />
                     </div>
                     <div className="grid grid-cols-2 gap-4">
@@ -1040,73 +1039,69 @@ const AddMenuItemModal = ({ categories, onClose, onAdd }: any) => {
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Price (₹)</label>
                             <input 
                                 type="number"
-                                className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:border-orange-500 outline-none dark:text-white"
-                                placeholder="99"
+                                className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-orange-500 dark:text-white"
+                                required
                                 value={price}
                                 onChange={e => setPrice(e.target.value)}
-                                required
                             />
                         </div>
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Category</label>
                             <select 
-                                className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:border-orange-500 outline-none dark:text-white"
+                                className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-orange-500 dark:text-white"
                                 value={category}
                                 onChange={e => setCategory(e.target.value)}
                             >
-                                {categories.filter((c: string) => c !== 'All').map((c: string) => (
-                                    <option key={c} value={c}>{c}</option>
-                                ))}
-                                <option value="Specials">Specials</option>
+                                {categories.filter(c => c !== 'All').map(c => <option key={c} value={c}>{c}</option>)}
                             </select>
                         </div>
                     </div>
                     <div>
                         <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Description</label>
                         <textarea 
-                            className="w-full p-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:border-orange-500 outline-none h-24 resize-none dark:text-white"
-                            placeholder="Brief details about the item..."
+                            className="w-full p-3 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl outline-none focus:border-orange-500 dark:text-white"
                             value={description}
                             onChange={e => setDescription(e.target.value)}
+                            rows={2}
                         />
                     </div>
-                    <button type="submit" className="w-full bg-orange-600 text-white font-bold py-4 rounded-xl hover:bg-orange-700 transition-colors">
-                        Add to Menu
-                    </button>
+                    <div className="flex gap-3 pt-2">
+                        <button type="button" onClick={onClose} className="flex-1 py-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold rounded-xl hover:bg-slate-200 dark:hover:bg-slate-700">Cancel</button>
+                        <button type="submit" className="flex-1 py-3 bg-slate-900 dark:bg-orange-600 text-white font-bold rounded-xl hover:opacity-90">Add Item</button>
+                    </div>
                 </form>
             </div>
         </div>
     );
-}
-
-const DesktopTab = ({ id, active, onClick, count }: any) => {
-  const isActive = active === id;
-  const labels: Record<string, string> = { NEW: 'Pending', COOKING: 'Kitchen', READY: 'Serving', HISTORY: 'History', MENU: 'Menu' };
-  
-  return (
-    <button 
-      onClick={() => onClick(id)}
-      className={`relative px-6 py-4 text-sm font-bold border-b-2 transition-all flex items-center gap-2 ${isActive ? 'border-orange-500 text-white bg-slate-900' : 'border-transparent text-slate-500 hover:bg-slate-900 hover:text-slate-300'}`}
-    >
-      {labels[id]}
-      {count > 0 && id !== 'MENU' && <span className="bg-slate-800 text-slate-300 px-1.5 py-0.5 rounded text-xs">{count}</span>}
-    </button>
-  );
 };
 
-const MobileTab = ({ id, icon: Icon, label, active, onClick, count }: any) => {
-  const isActive = active === id;
-  return (
-    <button onClick={() => onClick(id)} className="relative flex flex-col items-center justify-center gap-0.5 active:bg-slate-50 dark:active:bg-slate-800 group">
-       <div className={`p-1 rounded-xl transition-all ${isActive ? 'bg-slate-900 dark:bg-slate-700 text-white' : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'}`}>
-         <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />
-       </div>
-       <span className={`text-[9px] font-bold ${isActive ? 'text-slate-900 dark:text-white' : 'text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300'}`}>{label}</span>
-       {count > 0 && (
-         <span className="absolute top-2 right-2 w-4 h-4 bg-red-500 text-white text-[9px] font-bold flex items-center justify-center rounded-full border-2 border-white dark:border-slate-900 shadow-sm">
-           {count}
-         </span>
-       )}
-    </button>
-  );
-};
+const DesktopTab = ({ id, active, onClick, count }: { id: string, active: string, onClick: (id: string) => void, count: number }) => (
+   <button 
+     onClick={() => onClick(id)}
+     className={`relative px-8 py-4 font-bold text-sm tracking-wide transition-all border-b-4 ${active === id ? 'border-orange-500 text-white bg-slate-900' : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-900/50'}`}
+   >
+     {id}
+     {count > 0 && (
+       <span className={`ml-2 px-1.5 py-0.5 text-[10px] rounded-full ${active === id ? 'bg-orange-500 text-white' : 'bg-slate-800 text-slate-400'}`}>
+         {count}
+       </span>
+     )}
+   </button>
+);
+
+const MobileTab = ({ id, icon: Icon, label, active, onClick, count }: any) => (
+  <button 
+    onClick={() => onClick(id)}
+    className={`flex flex-col items-center justify-center relative transition-colors ${active === id ? 'text-orange-600 dark:text-orange-500' : 'text-slate-400 dark:text-slate-600'}`}
+  >
+    <div className={`p-1 rounded-xl transition-all ${active === id ? 'bg-orange-50 dark:bg-orange-900/20' : ''}`}>
+        <Icon size={active === id ? 22 : 20} strokeWidth={active === id ? 2.5 : 2} />
+    </div>
+    <span className="text-[10px] font-bold mt-0.5">{label}</span>
+    {count > 0 && (
+      <span className="absolute top-1 right-2 min-w-[16px] h-4 bg-red-500 text-white text-[9px] font-bold flex items-center justify-center rounded-full px-1 border border-white dark:border-slate-900">
+        {count}
+      </span>
+    )}
+  </button>
+);

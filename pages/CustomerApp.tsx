@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useRef } from 'react';
-import { ShoppingBag, Utensils, Clock, LogOut, ChevronRight, User as UserIcon, Mail, ArrowRight, Search, Flame, Timer, Lightbulb, Sparkles } from 'lucide-react';
+import { ShoppingBag, Utensils, Clock, LogOut, ChevronRight, User as UserIcon, Mail, ArrowRight, Search, Flame, Timer, Lightbulb, Sparkles, RotateCcw, CheckCircle2, AlertCircle, Plus } from 'lucide-react';
 import { MenuItem, CartItem, Order, OrderStatus, User } from '../types';
 import { db, parseJwt } from '../services/storage';
 import { CartSheet } from '../components/CartSheet';
@@ -34,6 +34,9 @@ export const CustomerApp: React.FC = () => {
   const [focusedOrder, setFocusedOrder] = useState<Order | null>(null);
   const [dailyFact, setDailyFact] = useState('');
   
+  // Notification Toast State
+  const [toast, setToast] = useState<{msg: string, type: 'SUCCESS' | 'ERROR' | 'INFO'} | null>(null);
+
   // Menu UI States
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -98,6 +101,18 @@ export const CustomerApp: React.FC = () => {
       return () => unsubscribe();
     }
   }, [user, focusedOrder]);
+
+  // Toast Timer
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => setToast(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  const showToast = (msg: string, type: 'SUCCESS' | 'ERROR' | 'INFO' = 'INFO') => {
+    setToast({ msg, type });
+  };
 
   const handleGoogleCredentialResponse = async (response: any) => {
     try {
@@ -176,6 +191,56 @@ export const CustomerApp: React.FC = () => {
     });
   };
 
+  // --- REORDER LOGIC ---
+  const handleReorder = (oldOrder: Order) => {
+    // 1. Map old items to current menu to get LIVE prices and availability
+    let itemsAdded = 0;
+    let itemsUnavailable = 0;
+    const newCartItems: CartItem[] = [];
+
+    oldOrder.items.forEach(oldItem => {
+        const currentMenuItem = menu.find(m => m.name === oldItem.name); // Match by name as ID might change on DB reset
+        
+        if (currentMenuItem && currentMenuItem.isAvailable) {
+            newCartItems.push({
+                ...currentMenuItem,
+                quantity: oldItem.quantity
+            });
+            itemsAdded++;
+        } else {
+            itemsUnavailable++;
+        }
+    });
+
+    if (itemsAdded === 0) {
+        showToast("All items from this order are currently unavailable.", "ERROR");
+        return;
+    }
+
+    // 2. Update Cart (Append to existing)
+    setCart(prev => {
+        const combined = [...prev];
+        newCartItems.forEach(newItem => {
+            const existingIdx = combined.findIndex(c => c.id === newItem.id);
+            if (existingIdx > -1) {
+                combined[existingIdx].quantity += newItem.quantity;
+            } else {
+                combined.push(newItem);
+            }
+        });
+        return combined;
+    });
+
+    // 3. Feedback & UI
+    if (itemsUnavailable > 0) {
+        showToast(`${itemsAdded} items added. ${itemsUnavailable} items were sold out.`, "INFO");
+    } else {
+        showToast("Order added to cart!", "SUCCESS");
+    }
+    
+    setIsCartOpen(true);
+  };
+
   const handlePlaceOrder = async (method: 'CASH' | 'UPI') => {
     if (!user) return;
     setIsPlacingOrder(true);
@@ -213,12 +278,13 @@ export const CustomerApp: React.FC = () => {
       try {
         // 3. API Call
         await db.updateOrderStatus(focusedOrder.id, OrderStatus.CANCELLED);
+        showToast("Order cancelled.", "INFO");
       } catch (error) {
         // 4. Revert on failure
         console.error("Failed to cancel order", error);
         setFocusedOrder(previousOrder);
         setUserOrders(previousList);
-        alert("Failed to cancel order. Please try again.");
+        showToast("Failed to cancel. Network error?", "ERROR");
       }
     }
   };
@@ -470,6 +536,22 @@ export const CustomerApp: React.FC = () => {
   if (view === 'HISTORY') {
       return (
           <div className="min-h-screen bg-slate-50">
+              {/* TOAST */}
+              {toast && (
+                  <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-sm animate-in slide-in-from-top-5 duration-300">
+                    <div className={`p-4 rounded-xl shadow-xl border flex items-center gap-3 ${
+                        toast.type === 'SUCCESS' ? 'bg-green-900 text-white border-green-800' :
+                        toast.type === 'ERROR' ? 'bg-red-900 text-white border-red-800' :
+                        'bg-slate-900 text-white border-slate-800'
+                    }`}>
+                        {toast.type === 'SUCCESS' ? <CheckCircle2 size={20} className="text-green-400" /> :
+                         toast.type === 'ERROR' ? <AlertCircle size={20} className="text-red-400" /> :
+                         <Sparkles size={20} className="text-blue-400" />}
+                        <div className="font-medium text-sm">{toast.msg}</div>
+                    </div>
+                  </div>
+              )}
+
               <header className="bg-white sticky top-0 z-10 px-5 py-4 border-b border-slate-100 flex items-center gap-3 shadow-sm">
                     <button onClick={() => setView('MENU')} className="p-2 -ml-2 hover:bg-slate-100 rounded-full text-slate-600">
                         <ChevronRight className="rotate-180" size={24} />
@@ -490,7 +572,7 @@ export const CustomerApp: React.FC = () => {
                           <div 
                             key={order.id} 
                             onClick={() => { setFocusedOrder(order); setView('ORDER_DETAILS'); }}
-                            className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 active:scale-[0.98] transition-transform"
+                            className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 active:scale-[0.98] transition-transform group"
                           >
                               <div className="flex justify-between items-start mb-3">
                                   <div className="flex items-center gap-2">
@@ -502,9 +584,22 @@ export const CustomerApp: React.FC = () => {
                               <div className="text-sm text-slate-600 mb-3">
                                   {order.items.map(i => `${i.quantity}x ${i.name}`).join(', ')}
                               </div>
-                              <div className="flex justify-between items-center text-sm font-semibold pt-2 border-t border-slate-50">
-                                  <span>₹{order.totalAmount}</span>
-                                  <span className="text-orange-600 flex items-center gap-1">View Details <ChevronRight size={14} /></span>
+                              <div className="flex justify-between items-center pt-2 border-t border-slate-50">
+                                  <span className="text-sm font-bold">₹{order.totalAmount}</span>
+                                  
+                                  <div className="flex items-center gap-2">
+                                      {/* Reorder Button */}
+                                      <button 
+                                        onClick={(e) => { e.stopPropagation(); handleReorder(order); }}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-200 text-orange-600 bg-orange-50 hover:bg-orange-100 font-bold text-xs transition-colors"
+                                      >
+                                          <RotateCcw size={12} /> Reorder
+                                      </button>
+                                      
+                                      <span className="text-slate-400 group-hover:text-orange-600 transition-colors">
+                                          <ChevronRight size={16} />
+                                      </span>
+                                  </div>
                               </div>
                           </div>
                       ))
@@ -533,6 +628,23 @@ export const CustomerApp: React.FC = () => {
 
   return (
     <div className="min-h-screen pb-24 max-w-md mx-auto bg-slate-50 border-x border-slate-100 shadow-2xl">
+      
+      {/* CUSTOMER TOAST (Menu view) */}
+      {toast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-sm animate-in slide-in-from-top-5 duration-300">
+            <div className={`p-4 rounded-xl shadow-xl border flex items-center gap-3 ${
+                toast.type === 'SUCCESS' ? 'bg-slate-900 text-white border-slate-800' :
+                toast.type === 'ERROR' ? 'bg-red-600 text-white border-red-500' :
+                'bg-white text-slate-900 border-slate-200'
+            }`}>
+                {toast.type === 'SUCCESS' ? <CheckCircle2 size={20} className="text-green-400" /> :
+                    toast.type === 'ERROR' ? <AlertCircle size={20} className="text-white" /> :
+                    <Sparkles size={20} className="text-blue-500" />}
+                <div className="font-bold text-sm">{toast.msg}</div>
+            </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="bg-white sticky top-0 z-20 shadow-sm">
           {/* Top Bar */}
