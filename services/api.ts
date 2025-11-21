@@ -54,6 +54,22 @@ export const apiDb = {
     });
   },
 
+  addMenuItem: async (item: Partial<MenuItem>): Promise<MenuItem> => {
+    const res = await fetch(`${API_URL}/api/menu`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(item)
+    });
+    if (!res.ok) throw new Error('Failed to add menu item');
+    return res.json();
+  },
+
+  deleteMenuItem: async (itemId: string): Promise<void> => {
+    await fetch(`${API_URL}/api/menu/${itemId}`, {
+      method: 'DELETE'
+    });
+  },
+
   getOrders: async (): Promise<Order[]> => {
     const res = await fetch(`${API_URL}/api/orders`);
     if (!res.ok) throw new Error('Failed to fetch orders');

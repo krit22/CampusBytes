@@ -6,7 +6,7 @@ import {
   RefreshCw, Check, DollarSign, Lock, RotateCcw, ChevronRight, 
   CheckCircle2, Utensils, PackageCheck, Clock, BellRing, ChefHat, 
   Search, Menu as MenuIcon, BarChart3, X, AlertTriangle, Ban, Undo2,
-  Timer
+  Timer, Plus, Trash2, TrendingUp, TrendingDown
 } from 'lucide-react';
 
 // Robust Audio Player
@@ -63,6 +63,7 @@ export const VendorApp: React.FC = () => {
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [isMenuLoading, setIsMenuLoading] = useState(false);
   const [showStats, setShowStats] = useState(false);
+  const [showAddMenuModal, setShowAddMenuModal] = useState(false);
   const [currentTime, setCurrentTime] = useState(Date.now());
   
   // NOTIFICATIONS
@@ -159,7 +160,7 @@ export const VendorApp: React.FC = () => {
     return 'NORMAL';
   };
 
-  // --- ACTIONS (OPTIMISTIC UI) ---
+  // --- ACTIONS ---
   
   const updateStatus = async (orderId: string, status: OrderStatus) => {
     const previousOrders = [...orders];
@@ -216,6 +217,26 @@ export const VendorApp: React.FC = () => {
       alert("Failed to update menu item.");
     }
   };
+  
+  const handleAddItem = async (newItem: Partial<MenuItem>) => {
+     try {
+        await db.addMenuItem(newItem);
+        await loadData(); // Refresh menu
+        setShowAddMenuModal(false);
+     } catch (e) {
+        alert("Failed to add item.");
+     }
+  };
+
+  const handleDeleteItem = async (itemId: string) => {
+    if(!confirm("Are you sure you want to delete this item permanently?")) return;
+    try {
+        await db.deleteMenuItem(itemId);
+        setMenu(prev => prev.filter(m => m.id !== itemId));
+    } catch (e) {
+        alert("Failed to delete item.");
+    }
+  };
 
   // --- COMPUTED DATA ---
   const filteredOrders = useMemo(() => {
@@ -241,29 +262,6 @@ export const VendorApp: React.FC = () => {
     ['All', ...Array.from(new Set(menu.map(m => m.category))).sort()], 
   [menu]);
 
-  // --- STATS CALCULATION ---
-  const stats = useMemo(() => {
-    const completedOrders = orders.filter(o => o.status === OrderStatus.DELIVERED);
-    const totalOrders = completedOrders.length;
-    
-    const itemCounts: {[key: string]: number} = {};
-    completedOrders.forEach(o => {
-      o.items.forEach(i => {
-        itemCounts[i.name] = (itemCounts[i.name] || 0) + i.quantity;
-      });
-    });
-    
-    const topItems = Object.entries(itemCounts)
-      .sort(([,a], [,b]) => b - a)
-      .slice(0, 3);
-
-    return {
-      totalOrders,
-      avgOrderValue: totalOrders > 0 ? Math.round(revenue / totalOrders) : 0,
-      topItems
-    };
-  }, [orders, revenue]);
-
   // --- SCROLL HELPER ---
   const scrollToCat = (cat: string) => {
     setMenuCatFilter(cat);
@@ -281,7 +279,7 @@ export const VendorApp: React.FC = () => {
             <Lock className="text-white" size={32} />
           </div>
           <h1 className="text-2xl font-black text-white mb-2">Vendor Portal</h1>
-          <p className="text-slate-500 mb-8 text-sm font-mono">System v3.1 (Live)</p>
+          <p className="text-slate-500 mb-8 text-sm font-mono">System v3.2 (Analytics)</p>
           
           <form onSubmit={handleLogin} className="space-y-4">
             <input 
@@ -326,51 +324,22 @@ export const VendorApp: React.FC = () => {
         </div>
       )}
 
-      {/* STATS MODAL */}
+      {/* FULL STATS DASHBOARD */}
       {showStats && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-            <div className="bg-slate-900 p-5 flex justify-between items-center">
-               <h2 className="text-white font-bold text-lg flex items-center gap-2">
-                 <BarChart3 className="text-orange-500" /> Sales Report
-               </h2>
-               <button onClick={() => setShowStats(false)} className="text-slate-400 hover:text-white bg-white/10 p-1 rounded-full">
-                 <X size={20} />
-               </button>
-            </div>
-            <div className="p-6 space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                 <div className="bg-green-50 p-4 rounded-2xl border border-green-100">
-                    <div className="text-xs text-green-600 font-bold uppercase mb-1">Revenue</div>
-                    <div className="text-2xl font-black text-green-800">₹{revenue}</div>
-                 </div>
-                 <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
-                    <div className="text-xs text-blue-600 font-bold uppercase mb-1">Orders</div>
-                    <div className="text-2xl font-black text-blue-800">{stats.totalOrders}</div>
-                 </div>
-              </div>
-              
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                 <div className="text-xs text-slate-500 font-bold uppercase mb-3">Top Selling Items</div>
-                 {stats.topItems.length > 0 ? (
-                   <div className="space-y-3">
-                     {stats.topItems.map(([name, count], idx) => (
-                       <div key={name} className="flex justify-between items-center text-sm">
-                          <div className="flex items-center gap-3">
-                             <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${idx === 0 ? 'bg-orange-100 text-orange-700' : 'bg-slate-200 text-slate-600'}`}>{idx + 1}</span>
-                             <span className="font-medium text-slate-700">{name}</span>
-                          </div>
-                          <span className="font-bold text-slate-900">{count} sold</span>
-                       </div>
-                     ))}
-                   </div>
-                 ) : (
-                   <div className="text-center text-slate-400 text-sm py-2">No sales data yet</div>
-                 )}
-              </div>
-            </div>
-          </div>
-        </div>
+        <StatsDashboard 
+            orders={orders} 
+            revenue={revenue} 
+            onClose={() => setShowStats(false)} 
+        />
+      )}
+
+      {/* ADD MENU MODAL */}
+      {showAddMenuModal && (
+          <AddMenuItemModal 
+            categories={menuCategories} 
+            onClose={() => setShowAddMenuModal(false)} 
+            onAdd={handleAddItem} 
+          />
       )}
 
       {/* HEADER */}
@@ -384,7 +353,7 @@ export const VendorApp: React.FC = () => {
               <h1 className="font-bold leading-none">CampusBytes</h1>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-[10px] font-mono text-slate-400">VENDOR</span>
-                <span className="text-[9px] bg-green-900 text-green-400 px-1.5 rounded border border-green-800">v3.1</span>
+                <span className="text-[9px] bg-green-900 text-green-400 px-1.5 rounded border border-green-800">v3.2</span>
               </div>
             </div>
           </div>
@@ -392,10 +361,10 @@ export const VendorApp: React.FC = () => {
           <div className="flex items-center gap-2">
              <button 
                 onClick={() => setShowStats(true)}
-                className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors"
+                className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors group"
              >
-                <BarChart3 size={14} className="text-orange-400" /> 
-                <span className="font-mono font-bold text-sm text-white">₹{revenue}</span>
+                <BarChart3 size={14} className="text-orange-400 group-hover:scale-110 transition-transform" /> 
+                <span className="font-mono font-bold text-sm text-white hidden sm:inline">Stats</span>
              </button>
              <button 
                onClick={() => window.location.reload()}
@@ -450,6 +419,15 @@ export const VendorApp: React.FC = () => {
                </div>
             </div>
 
+            <div className="flex justify-end">
+                <button 
+                    onClick={() => setShowAddMenuModal(true)}
+                    className="bg-slate-900 text-white font-bold px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-slate-800 transition-colors shadow-lg shadow-slate-200"
+                >
+                    <Plus size={18} /> Add New Item
+                </button>
+            </div>
+
             <div className="space-y-6">
                {menuCategories.filter(c => c !== 'All').map(cat => {
                  const items = menu.filter(m => 
@@ -466,16 +444,29 @@ export const VendorApp: React.FC = () => {
                       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 divide-y divide-slate-100 overflow-hidden">
                          {items.map(item => (
                            <div key={item.id} className={`p-4 flex justify-between items-center transition-colors ${!item.isAvailable ? 'bg-slate-50/80' : ''}`}>
-                              <div className={!item.isAvailable ? 'opacity-50' : ''}>
-                                <h4 className="font-bold text-slate-800">{item.name}</h4>
-                                <p className="text-sm text-slate-500 font-medium">₹{item.price}</p>
+                              <div className="flex items-center gap-4">
+                                <div className={!item.isAvailable ? 'opacity-50' : ''}>
+                                    <h4 className="font-bold text-slate-800">{item.name}</h4>
+                                    <p className="text-sm text-slate-500 font-medium">₹{item.price}</p>
+                                </div>
                               </div>
-                              <button 
-                                onClick={() => toggleItem(item)}
-                                className={`relative w-14 h-8 rounded-full transition-colors ${item.isAvailable ? 'bg-green-500' : 'bg-slate-300'}`}
-                              >
-                                <div className={`absolute top-1 left-1 w-6 h-6 bg-white rounded-full shadow transition-transform ${item.isAvailable ? 'translate-x-6' : 'translate-x-0'}`} />
-                              </button>
+                              
+                              <div className="flex items-center gap-4">
+                                  <button 
+                                    onClick={() => toggleItem(item)}
+                                    className={`relative w-14 h-8 rounded-full transition-colors ${item.isAvailable ? 'bg-green-500' : 'bg-slate-300'}`}
+                                  >
+                                    <div className={`absolute top-1 left-1 w-6 h-6 bg-white rounded-full shadow transition-transform ${item.isAvailable ? 'translate-x-6' : 'translate-x-0'}`} />
+                                  </button>
+                                  
+                                  <button
+                                    onClick={() => handleDeleteItem(item.id)}
+                                    className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                    title="Delete Item"
+                                  >
+                                      <Trash2 size={18} />
+                                  </button>
+                              </div>
                            </div>
                          ))}
                       </div>
@@ -672,6 +663,199 @@ export const VendorApp: React.FC = () => {
 };
 
 // --- SUBCOMPONENTS ---
+
+const StatsDashboard = ({ orders, revenue, onClose }: { orders: Order[], revenue: number, onClose: () => void }) => {
+    const completedOrders = orders.filter(o => o.status === OrderStatus.DELIVERED);
+    const totalOrders = completedOrders.length;
+    
+    // Calculate Item Sales
+    const itemCounts: {[key: string]: number} = {};
+    const itemRevenue: {[key: string]: number} = {};
+    
+    completedOrders.forEach(o => {
+      o.items.forEach(i => {
+        itemCounts[i.name] = (itemCounts[i.name] || 0) + i.quantity;
+        itemRevenue[i.name] = (itemRevenue[i.name] || 0) + (i.price * i.quantity);
+      });
+    });
+    
+    const sortedItems = Object.entries(itemCounts).sort(([,a], [,b]) => b - a);
+    const topItems = sortedItems.slice(0, 5);
+    const lowStockCandidates = sortedItems.slice(-3).filter(([_, count]) => count > 0);
+
+    return (
+        <div className="fixed inset-0 z-[60] bg-slate-100 overflow-y-auto animate-in slide-in-from-bottom-10 duration-300">
+            <div className="bg-slate-900 text-white sticky top-0 z-10 px-6 py-4 flex justify-between items-center shadow-md">
+                <div>
+                    <h2 className="text-xl font-black">Analytics Dashboard</h2>
+                    <p className="text-slate-400 text-xs">Real-time Business Insights</p>
+                </div>
+                <button onClick={onClose} className="bg-white/10 hover:bg-white/20 p-2 rounded-full transition-colors">
+                    <X size={24} />
+                </button>
+            </div>
+            
+            <div className="max-w-3xl mx-auto p-6 space-y-6">
+                
+                {/* KPI Cards */}
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                        <div className="flex items-center gap-2 text-slate-500 text-xs font-bold uppercase mb-1">
+                            <DollarSign size={14} /> Total Revenue
+                        </div>
+                        <div className="text-3xl font-black text-slate-900">₹{revenue}</div>
+                    </div>
+                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                        <div className="flex items-center gap-2 text-slate-500 text-xs font-bold uppercase mb-1">
+                            <PackageCheck size={14} /> Completed Orders
+                        </div>
+                        <div className="text-3xl font-black text-slate-900">{totalOrders}</div>
+                    </div>
+                    <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 col-span-2 md:col-span-1">
+                        <div className="flex items-center gap-2 text-slate-500 text-xs font-bold uppercase mb-1">
+                            <TrendingUp size={14} /> Avg Order Value
+                        </div>
+                        <div className="text-3xl font-black text-slate-900">₹{totalOrders > 0 ? Math.round(revenue / totalOrders) : 0}</div>
+                    </div>
+                </div>
+
+                {/* Top Performers Chart (CSS Bar Chart) */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <h3 className="font-bold text-lg mb-6 flex items-center gap-2">
+                        <TrendingUp className="text-green-500" size={20} /> Best Selling Items
+                    </h3>
+                    {topItems.length > 0 ? (
+                        <div className="space-y-4">
+                            {topItems.map(([name, count], i) => {
+                                const max = topItems[0][1];
+                                const percent = (count / max) * 100;
+                                return (
+                                    <div key={name}>
+                                        <div className="flex justify-between text-sm mb-1">
+                                            <span className="font-bold text-slate-700">{i+1}. {name}</span>
+                                            <span className="text-slate-500 font-mono">{count} sold</span>
+                                        </div>
+                                        <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden">
+                                            <div 
+                                                className="h-full bg-orange-500 rounded-full" 
+                                                style={{ width: `${percent}%` }} 
+                                            />
+                                        </div>
+                                    </div>
+                                )
+                            })}
+                        </div>
+                    ) : (
+                        <div className="text-center py-10 text-slate-400">No sales data available yet</div>
+                    )}
+                </div>
+
+                {/* Insights Section */}
+                <div className="grid md:grid-cols-2 gap-6">
+                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                        <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2">
+                            <AlertTriangle className="text-orange-500" size={18} /> Optimization Tips
+                        </h3>
+                        <ul className="space-y-3 text-sm text-slate-600">
+                            {lowStockCandidates.length > 0 ? (
+                                <li className="flex gap-2">
+                                    <span className="text-orange-500">•</span> 
+                                    <span>Consider promoting <b>{lowStockCandidates[0][0]}</b> as it has low sales volume.</span>
+                                </li>
+                            ) : (
+                                <li className="text-slate-400 italic">Gathering more data...</li>
+                            )}
+                             <li className="flex gap-2">
+                                <span className="text-green-500">•</span> 
+                                <span>{topItems[0]?.[0] || "Top item"} is your star performer. Keep it in stock!</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    );
+};
+
+const AddMenuItemModal = ({ categories, onClose, onAdd }: any) => {
+    const [name, setName] = useState('');
+    const [price, setPrice] = useState('');
+    const [category, setCategory] = useState(categories[1] || 'Snacks'); // Default to first actual category
+    const [description, setDescription] = useState('');
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!name || !price) return;
+        onAdd({
+            name,
+            price: Number(price),
+            category,
+            description
+        });
+    };
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
+                <div className="bg-slate-900 p-5 flex justify-between items-center">
+                    <h3 className="text-white font-bold text-lg">Add New Item</h3>
+                    <button onClick={onClose} className="text-slate-400 hover:text-white"><X size={20}/></button>
+                </div>
+                <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Item Name</label>
+                        <input 
+                            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:border-orange-500 outline-none"
+                            placeholder="e.g. Special Burger"
+                            value={name}
+                            onChange={e => setName(e.target.value)}
+                            required
+                        />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                         <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Price (₹)</label>
+                            <input 
+                                type="number"
+                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:border-orange-500 outline-none"
+                                placeholder="99"
+                                value={price}
+                                onChange={e => setPrice(e.target.value)}
+                                required
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Category</label>
+                            <select 
+                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:border-orange-500 outline-none"
+                                value={category}
+                                onChange={e => setCategory(e.target.value)}
+                            >
+                                {categories.filter((c: string) => c !== 'All').map((c: string) => (
+                                    <option key={c} value={c}>{c}</option>
+                                ))}
+                                <option value="Specials">Specials</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-bold text-slate-500 uppercase mb-1">Description</label>
+                        <textarea 
+                            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:border-orange-500 outline-none h-24 resize-none"
+                            placeholder="Brief details about the item..."
+                            value={description}
+                            onChange={e => setDescription(e.target.value)}
+                        />
+                    </div>
+                    <button type="submit" className="w-full bg-orange-600 text-white font-bold py-4 rounded-xl hover:bg-orange-700 transition-colors">
+                        Add to Menu
+                    </button>
+                </form>
+            </div>
+        </div>
+    );
+}
 
 const DesktopTab = ({ id, active, onClick, count }: any) => {
   const isActive = active === id;

@@ -133,6 +133,27 @@ app.get('/api/menu', async (req, res) => {
   }
 });
 
+// Add New Menu Item
+app.post('/api/menu', async (req, res) => {
+  try {
+    const newItem = new Menu(req.body);
+    const saved = await newItem.save();
+    res.json({ id: saved._id, ...saved.toObject() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Delete Menu Item
+app.delete('/api/menu/:id', async (req, res) => {
+  try {
+    await Menu.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Update Menu Item Status
 app.put('/api/menu/:id', async (req, res) => {
   try {

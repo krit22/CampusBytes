@@ -180,6 +180,31 @@ const mockDb = {
     }
   },
 
+  addMenuItem: async (item: Partial<MenuItem>): Promise<MenuItem> => {
+    await delay(300);
+    const menu = await mockDb.getMenu();
+    const newItem = {
+      id: 'm_' + Date.now(),
+      name: item.name || 'New Item',
+      description: item.description || '',
+      price: item.price || 0,
+      category: item.category || 'Snacks',
+      isAvailable: true,
+      isBestseller: false
+    } as MenuItem;
+    
+    menu.push(newItem);
+    localStorage.setItem(STORAGE_KEYS.MENU, JSON.stringify(menu));
+    return newItem;
+  },
+
+  deleteMenuItem: async (itemId: string): Promise<void> => {
+    await delay(200);
+    const menu = await mockDb.getMenu();
+    const filtered = menu.filter(m => m.id !== itemId);
+    localStorage.setItem(STORAGE_KEYS.MENU, JSON.stringify(filtered));
+  },
+
   getOrders: async (): Promise<Order[]> => {
     const data = localStorage.getItem(STORAGE_KEYS.ORDERS);
     return data ? JSON.parse(data) : [];
