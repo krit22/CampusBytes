@@ -116,7 +116,20 @@ app.get('/api/menu', async (req, res) => {
     const bulkOps = INITIAL_MENU.map(item => ({
       updateOne: {
         filter: { name: item.name },
-        update: { $set: item },
+        update: { 
+            // Fields from code (Static) - Updates every time
+            $set: { 
+                description: item.description, 
+                price: item.price, 
+                category: item.category, 
+                isBestseller: item.isBestseller 
+            },
+            // Fields from DB state (Dynamic) - Only sets on creation, preserved otherwise
+            $setOnInsert: { 
+                name: item.name, 
+                isAvailable: item.isAvailable 
+            }
+        },
         upsert: true
       }
     }));
