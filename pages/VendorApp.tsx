@@ -5,30 +5,36 @@ import { Order, OrderStatus, PaymentStatus, MenuItem } from '../types';
 import { 
   RefreshCw, Check, DollarSign, User, Power, RotateCcw, ChevronRight, 
   CheckCircle2, Utensils, PackageCheck, Clock, BellRing, ChefHat, 
-  Search, Menu as MenuIcon, Lock, ArrowRight, Undo2, BarChart3, X, Bell
+  Search, Menu as MenuIcon, Lock, ArrowRight, Undo2, BarChart3, X, Bell, Volume2
 } from 'lucide-react';
 
-// Simple "Ding" sound base64
-const NOTIFICATION_SOUND = "data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU"; // Shortened placeholder, replaced with functional one below in logic
-const REAL_NOTIFICATION_SOUND = "data:audio/mp3;base64,SUQzBAAAAAABAFRYWFgAAAASAAADbWFqb3JfYnJhbmQAbXA0MgBUWFhYAAAAEQAAA21pbm9yX3ZlcnNpb24AMABUWFhYAAAAHAAAA2NvbXBhdGlibGVfYnJhbmRzAGlzb21tcDQyAFRTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//uQZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWgAAAA0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAv/7kGRzgAAAH+AAAAAABAAABpAAAACAAADSAAAAMAEAAAGkAAAAIAAANIAAAAwAAAAAAAAAAAAAAAAAAAAAA"; 
-
-// Using a reliable beep sound data URI
-const PLAY_SOUND = () => {
+// Robust Audio Player
+const PLAY_SOUND = async () => {
   try {
-    // Short pleasant beep
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+
+    const audioContext = new AudioContextClass();
+    
+    // Resume context if suspended (common browser policy requirement)
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume();
+    }
+    
     const oscillator = audioContext.createOscillator();
     const gainNode = audioContext.createGain();
     
     oscillator.connect(gainNode);
     gainNode.connect(audioContext.destination);
     
+    // "Ding" effect
     oscillator.type = 'sine';
     oscillator.frequency.setValueAtTime(500, audioContext.currentTime);
     oscillator.frequency.exponentialRampToValueAtTime(1000, audioContext.currentTime + 0.1);
     
+    // Fade out
     gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.5);
     
     oscillator.start();
     oscillator.stop(audioContext.currentTime + 0.5);
@@ -146,6 +152,12 @@ export const VendorApp: React.FC = () => {
       // Revert on failure
       setMenu(prev => prev.map(m => m.id === item.id ? { ...m, isAvailable: !newStatus } : m));
     }
+  };
+
+  const testNotification = () => {
+    PLAY_SOUND();
+    setNewOrderToast("Test Order #000");
+    setTimeout(() => setNewOrderToast(null), 4000);
   };
 
   // --- COMPUTED DATA ---
@@ -323,6 +335,13 @@ export const VendorApp: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
+             <button 
+               onClick={testNotification}
+               className="p-2 bg-slate-800 hover:bg-slate-700 rounded-full text-slate-400 hover:text-orange-400 transition-colors"
+               title="Test Notification Sound"
+             >
+                <Volume2 size={18} />
+             </button>
              <button 
                 onClick={() => setShowStats(true)}
                 className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors"
