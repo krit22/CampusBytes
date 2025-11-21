@@ -6,11 +6,12 @@ import { apiDb } from './api';
 const STORAGE_KEYS = {
   ORDERS: 'cb_orders',
   MENU: 'cb_menu',
-  USER: 'cb_user'
+  USER: 'cb_user',
+  SPAM: 'cb_spam',
+  SETTINGS: 'cb_settings'
 };
 
 // Check Environment Variables
-// Default to API if explicitly set, otherwise check if we want to use mock
 const USE_API = import.meta.env?.VITE_USE_API === 'true' || (import.meta.env?.VITE_USE_API === undefined && false); 
 
 // ------------------------------------------------------------------
@@ -103,32 +104,79 @@ export const parseJwt = (token: string): any => {
   }
 };
 
+// MOCK SPAM HANDLER
+const handleMockSpamStrike = (customerId: string, customerName: string) => {
+    const spamStr = localStorage.getItem(STORAGE_KEYS.SPAM);
+    let spamRecords: SpamRecord[] = spamStr ? JSON.parse(spamStr) : [];
+    
+    let record = spamRecords.find(r => r.customerId === customerId);
+    if (!record) {
+        record = { 
+            customerId, 
+            customerName, 
+            strikes: 0, 
+            banCount: 0, 
+            isBanned: false, 
+            banExpiresAt: 0, 
+            banReason: '', 
+            lastStrikeAt: Date.now() 
+        };
+        spamRecords.push(record);
+    }
+
+    record.strikes += 1;
+    record.lastStrikeAt = Date.now();
+
+    // 3 Strikes Rule
+    if (record.strikes >= 3) {
+        record.isBanned = true;
+        record.banCount += 1;
+        
+        if (record.banCount === 1) {
+            record.banExpiresAt = Date.now() + (60 * 60 * 1000); // 1 Hour
+            record.banReason = "Temp Ban (1h): 3 consecutive cancellations.";
+        } else if (record.banCount === 2) {
+            record.banExpiresAt = Date.now() + (24 * 60 * 60 * 1000); // 24 Hours
+            record.banReason = "Suspension (24h): Repeated spam activity.";
+        } else {
+            record.banExpiresAt = Date.now() + (99 * 365 * 24 * 60 * 60 * 1000); // Permanent
+            record.banReason = "PERMANENT BAN: Policy violation.";
+        }
+    }
+
+    localStorage.setItem(STORAGE_KEYS.SPAM, JSON.stringify(spamRecords));
+};
+
+
 const mockDb = {
   init: () => {
-    // Merge Stored Status with Code Menu
-    // This allows you to update prices/names in code, while keeping the "Sold Out" status 
-    // you might have toggled in the UI.
     const storedMenuJSON = localStorage.getItem(STORAGE_KEYS.MENU);
     let finalMenu = INITIAL_MENU;
 
     if (storedMenuJSON) {
       const storedMenu = JSON.parse(storedMenuJSON) as MenuItem[];
       finalMenu = INITIAL_MENU.map(codeItem => {
-        // Try to find the same item in storage (by ID)
         const storedItem = storedMenu.find(s => s.id === codeItem.id);
-        // If found, keep its availability status, but use the Name/Price from code
         if (storedItem) {
-          return { ...codeItem, isAvailable: storedItem.isAvailable };
+          return { 
+              ...codeItem, 
+              isAvailable: storedItem.isAvailable,
+              isBestseller: storedItem.isBestseller 
+          };
         }
         return codeItem;
       });
     }
     
-    // Always overwrite with the merged result
     localStorage.setItem(STORAGE_KEYS.MENU, JSON.stringify(finalMenu));
 
     if (!localStorage.getItem(STORAGE_KEYS.ORDERS)) {
       localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify([]));
+    }
+    
+    // Init Settings
+    if (!localStorage.getItem(STORAGE_KEYS.SETTINGS)) {
+        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify({ isBanSystemActive: true, isShopOpen: true }));
     }
   },
 
@@ -170,12 +218,12 @@ const mockDb = {
     return data ? JSON.parse(data) : [];
   },
   
-  updateMenuItemStatus: async (itemId: string, isAvailable: boolean): Promise<void> => {
+  updateMenuItemStatus: async (itemId: string, updates: Partial<MenuItem>): Promise<void> => {
     await delay(200);
     const menu = await mockDb.getMenu();
     const index = menu.findIndex(m => m.id === itemId);
     if (index !== -1) {
-      menu[index].isAvailable = isAvailable;
+      menu[index] = { ...menu[index], ...updates };
       localStorage.setItem(STORAGE_KEYS.MENU, JSON.stringify(menu));
     }
   },
@@ -222,12 +270,46 @@ const mockDb = {
 
   createOrder: async (user: User, items: any[], total: number, paymentMethod: 'CASH' | 'UPI'): Promise<Order> => {
     await delay(800);
+    
+    // CHECK SETTINGS & BAN
+    const settings = await mockDb.getSystemSettings();
+    
+    if (!settings.isShopOpen) {
+        throw new Error("Shop is currently closed.");
+    }
+
+    if (settings.isBanSystemActive) {
+        const spamStr = localStorage.getItem(STORAGE_KEYS.SPAM);
+        if (spamStr) {
+            const records = JSON.parse(spamStr) as SpamRecord[];
+            const record = records.find(r => r.customerId === user.id);
+            if (record && record.isBanned) {
+                if (Date.now() > record.banExpiresAt) {
+                    record.isBanned = false;
+                    record.strikes = 0; // RESET STRIKES
+                    localStorage.setItem(STORAGE_KEYS.SPAM, JSON.stringify(records));
+                } else {
+                    const err: any = new Error("Account Suspended");
+                    err.status = 403;
+                    err.data = { banReason: record.banReason, banExpiresAt: record.banExpiresAt };
+                    throw err;
+                }
+            }
+        }
+    }
+    
     const orders = await mockDb.getOrders();
     
-    // Mock Rate Limit
+    // Mock Rate Limit (Relaxed for testing)
     const activeCount = orders.filter(o => o.customerId === user.id && ['NEW','COOKING','READY'].includes(o.status)).length;
-    if (activeCount >= 3) {
-        throw new Error("Order Limit Reached. You have 3 active orders.");
+    if (activeCount >= 10) {
+        throw new Error("Order Limit Reached. You have too many active orders.");
+    }
+    
+    // Cooldown (5s)
+    const lastOrder = orders.filter(o => o.customerId === user.id).sort((a, b) => b.createdAt - a.createdAt)[0];
+    if (lastOrder && (Date.now() - lastOrder.createdAt < 5000)) {
+        throw new Error("Please wait a moment before placing another order.");
     }
 
     const randomNum = Math.floor(Math.random() * 900) + 100;
@@ -257,7 +339,7 @@ const mockDb = {
     const orders = await mockDb.getOrders();
     
     const randomNum = Math.floor(Math.random() * 900) + 100;
-    const token = `R-${randomNum}`; // Keeping 'R' for consistency, but this is manually created
+    const token = `R-${randomNum}`;
     
     const newOrder: Order = {
       id: Date.now().toString(),
@@ -267,7 +349,7 @@ const mockDb = {
       items,
       totalAmount: total,
       status: OrderStatus.NEW,
-      paymentStatus: paymentStatus, // Vendor can set this immediately
+      paymentStatus: paymentStatus,
       paymentMethod: 'CASH',
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -283,6 +365,13 @@ const mockDb = {
     const orders = await mockDb.getOrders();
     const index = orders.findIndex(o => o.id === orderId);
     if (index !== -1) {
+      const order = orders[index];
+      
+      // Handle Spam Tracking
+      if (status === OrderStatus.CANCELLED && order.customerId !== 'vendor_manual') {
+          handleMockSpamStrike(order.customerId, order.customerName);
+      }
+
       orders[index].status = status;
       orders[index].updatedAt = Date.now();
       localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
@@ -310,14 +399,45 @@ const mockDb = {
 
   // --- MOCK ADMIN ---
   getSystemSettings: async (): Promise<SystemSettings> => {
-    return { isBanSystemActive: true };
+    const stored = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+    return stored ? JSON.parse(stored) : { isBanSystemActive: true, isShopOpen: true };
   },
-  toggleBanSystem: async (isActive: boolean): Promise<void> => {},
+  toggleBanSystem: async (isActive: boolean): Promise<void> => {
+    const settings = await mockDb.getSystemSettings();
+    settings.isBanSystemActive = isActive;
+    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+  },
+  toggleShopStatus: async (isOpen: boolean): Promise<void> => {
+      const settings = await mockDb.getSystemSettings();
+      settings.isShopOpen = isOpen;
+      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+  },
   getBannedUsers: async (): Promise<SpamRecord[]> => {
-    return [];
+    const spamStr = localStorage.getItem(STORAGE_KEYS.SPAM);
+    if (!spamStr) return [];
+    const records = JSON.parse(spamStr) as SpamRecord[];
+    return records.filter(r => r.isBanned);
   },
-  unbanUser: async (customerId: string): Promise<void> => {},
-  unbanAllUsers: async (): Promise<void> => {}
+  unbanUser: async (customerId: string): Promise<void> => {
+    const spamStr = localStorage.getItem(STORAGE_KEYS.SPAM);
+    if (spamStr) {
+        const records = JSON.parse(spamStr) as SpamRecord[];
+        const idx = records.findIndex(r => r.customerId === customerId);
+        if (idx !== -1) {
+            records[idx].isBanned = false;
+            records[idx].strikes = 0; // RESET STRIKES
+            localStorage.setItem(STORAGE_KEYS.SPAM, JSON.stringify(records));
+        }
+    }
+  },
+  unbanAllUsers: async (): Promise<void> => {
+    const spamStr = localStorage.getItem(STORAGE_KEYS.SPAM);
+    if (spamStr) {
+        const records = JSON.parse(spamStr) as SpamRecord[];
+        const updated = records.map(r => ({ ...r, isBanned: false, strikes: 0 })); // RESET ALL
+        localStorage.setItem(STORAGE_KEYS.SPAM, JSON.stringify(updated));
+    }
+  }
 };
 
 // --- EXTENSIONS ---
@@ -342,7 +462,7 @@ String.prototype.hashCode = function() {
 // EXPORT
 // ------------------------------------------------------------------
 
-// Priority: API > Mock (Firebase removed)
+// Priority: API > Mock
 export const db = USE_API ? apiDb : mockDb;
 
 // Initialize the chosen DB

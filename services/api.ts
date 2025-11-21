@@ -181,7 +181,7 @@ export const apiDb = {
         const res = await fetch(`${API_URL}/api/admin/settings`);
         return res.json();
     } catch (e) {
-        return { isBanSystemActive: true };
+        return { key: 'GLOBAL_SETTINGS', isBanSystemActive: true };
     }
   },
 
@@ -216,3 +216,4 @@ export const apiDb = {
     });
   }
 };
+    

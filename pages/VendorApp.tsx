@@ -820,7 +820,7 @@ const SecurityPanel = ({ requestConfirm }: {
     requestConfirm: (title: string, message: string, action: () => void, type: 'DANGER' | 'NEUTRAL') => void 
 }) => {
     const [bannedUsers, setBannedUsers] = useState<SpamRecord[]>([]);
-    const [settings, setSettings] = useState<SystemSettings>({ isBanSystemActive: true });
+    const [settings, setSettings] = useState<SystemSettings>({ key: 'GLOBAL_SETTINGS', isBanSystemActive: true });
 
     useEffect(() => {
         loadSecurityData();
@@ -1270,3 +1270,4 @@ const MobileTab = ({ id, icon: Icon, label, active, onClick, count }: any) => (
     )}
   </button>
 );
+    

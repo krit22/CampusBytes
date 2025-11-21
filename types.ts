@@ -57,6 +57,7 @@ export interface SpamRecord {
   customerId: string;
   customerName: string;
   strikes: number;
+  banCount: number; // Track how many times user has been banned to escalate severity
   isBanned: boolean;
   banExpiresAt: number; // timestamp
   banReason: string;
@@ -64,7 +65,9 @@ export interface SpamRecord {
 }
 
 export interface SystemSettings {
+  key: string;
   isBanSystemActive: boolean;
+  isShopOpen?: boolean;
 }
 
 // Google Identity Services Types

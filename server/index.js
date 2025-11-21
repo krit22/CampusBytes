@@ -38,6 +38,7 @@ const SpamRecordSchema = new mongoose.Schema({
   customerId: String,
   customerName: String,
   strikes: { type: Number, default: 0 },
+  banCount: { type: Number, default: 0 }, // Historical ban count
   isBanned: { type: Boolean, default: false },
   banExpiresAt: { type: Number, default: 0 },
   banReason: String,
@@ -46,7 +47,8 @@ const SpamRecordSchema = new mongoose.Schema({
 
 const SystemSettingsSchema = new mongoose.Schema({
   key: { type: String, default: 'GLOBAL_SETTINGS', unique: true },
-  isBanSystemActive: { type: Boolean, default: true }
+  isBanSystemActive: { type: Boolean, default: true },
+  isShopOpen: { type: Boolean, default: true }
 });
 
 const Menu = mongoose.model('Menu', MenuSchema);
@@ -149,23 +151,27 @@ async function handleSpamStrike(customerId, customerName) {
   record.strikes += 1;
   record.lastStrikeAt = Date.now();
 
-  // BAN LOGIC
-  // Strike 1: 1 Hour
-  // Strike 2: 24 Hours
-  // Strike 3: Permanent (99 Years)
+  // BAN LOGIC - REFINED (3 Strikes Rule)
+  // Only ban if strikes reach 3.
+  // Duration depends on how many times they've been banned before (banCount).
   
-  if (record.strikes === 1) {
+  if (record.strikes >= 3) {
     record.isBanned = true;
-    record.banExpiresAt = Date.now() + (60 * 60 * 1000); // 1 Hour
-    record.banReason = "Temp Ban (1h): Suspicious cancellation activity.";
-  } else if (record.strikes === 2) {
-    record.isBanned = true;
-    record.banExpiresAt = Date.now() + (24 * 60 * 60 * 1000); // 24 Hours
-    record.banReason = "Suspension (24h): Repeated misuse detected.";
-  } else if (record.strikes >= 3) {
-    record.isBanned = true;
-    record.banExpiresAt = Date.now() + (99 * 365 * 24 * 60 * 60 * 1000); // Permanent
-    record.banReason = "PERMANENT BAN: Policy violation. Contact admin.";
+    record.banCount += 1; // Increment historical ban count
+    
+    // Determine duration based on Ban Level (1st, 2nd, 3rd time banned)
+    if (record.banCount === 1) {
+        record.banExpiresAt = Date.now() + (60 * 60 * 1000); // 1 Hour
+        record.banReason = "Temp Ban (1h): 3 consecutive cancellations.";
+    } else if (record.banCount === 2) {
+        record.banExpiresAt = Date.now() + (24 * 60 * 60 * 1000); // 24 Hours
+        record.banReason = "Suspension (24h): Repeated spam activity.";
+    } else {
+        record.banExpiresAt = Date.now() + (99 * 365 * 24 * 60 * 60 * 1000); // Permanent
+        record.banReason = "PERMANENT BAN: Policy violation.";
+    }
+    
+    // We keep 'strikes' at 3 for the record, but will reset it when unbanned.
   }
 
   await record.save();
@@ -183,8 +189,8 @@ app.get('/api/menu', async (req, res) => {
             $set: { 
                 description: item.description, 
                 price: item.price, 
-                category: item.category, 
-                isBestseller: item.isBestseller 
+                category: item.category,
+                isBestseller: item.isBestseller
             },
             $setOnInsert: { 
                 name: item.name, 
@@ -228,11 +234,11 @@ app.delete('/api/menu/:id', async (req, res) => {
   }
 });
 
-// Update Menu Item Status
+// Update Menu Item (Generic)
 app.put('/api/menu/:id', async (req, res) => {
   try {
-    const { isAvailable } = req.body;
-    await Menu.findByIdAndUpdate(req.params.id, { isAvailable });
+    // Allow updating any field passed in body (isAvailable, isBestseller, etc)
+    await Menu.findByIdAndUpdate(req.params.id, req.body);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -246,14 +252,20 @@ app.post('/api/orders', async (req, res) => {
     
     // --- SECURITY & BAN CHECK ---
     const settings = await getSystemSettings();
+
+    // Check Shop Status
+    if (!settings.isShopOpen && customerId !== 'vendor_manual') {
+        return res.status(503).json({ error: "Shop is currently closed." });
+    }
+
     if (settings.isBanSystemActive && customerId !== 'vendor_manual') {
         const record = await SpamRecord.findOne({ customerId });
         if (record && record.isBanned) {
             // Check expiry
             if (Date.now() > record.banExpiresAt) {
-                // Ban expired, unban user
+                // Ban expired -> UNBAN USER & RESET STRIKES
                 record.isBanned = false;
-                record.strikes = 0; // Optional: Reset strikes or keep history? Reset for mercy.
+                record.strikes = 0; // RESET STRIKES so they get fresh 3 chances
                 await record.save();
             } else {
                 // Still banned
@@ -269,23 +281,23 @@ app.post('/api/orders', async (req, res) => {
 
     // BYPASS FOR VENDOR MANUAL ORDERS
     if (customerId !== 'vendor_manual') {
-        // 1. Check total active orders for this user
+        // 1. Check total active orders for this user (Relaxed to 10 for testing)
         const activeOrdersCount = await Order.countDocuments({
             customerId,
             status: { $in: ['NEW', 'COOKING', 'READY'] }
         });
 
-        if (activeOrdersCount >= 3) {
+        if (activeOrdersCount >= 10) {
             return res.status(429).json({ 
-                error: "Order Limit Reached. You have 3 active orders. Please wait for them to be completed." 
+                error: "Order Limit Reached. You have too many active orders." 
             });
         }
 
-        // 2. Cooldown check
+        // 2. Cooldown check (Relaxed to 5s for testing)
         const lastOrder = await Order.findOne({ customerId }).sort({ createdAt: -1 });
         if (lastOrder) {
             const timeDiff = Date.now() - lastOrder.createdAt;
-            if (timeDiff < 30000) { // 30 seconds
+            if (timeDiff < 5000) { // 5 seconds
                 return res.status(429).json({ 
                     error: "Please wait a moment before placing another order." 
                 });
@@ -337,13 +349,11 @@ app.put('/api/orders/:id/status', async (req, res) => {
     if (status === 'CANCELLED') {
         const order = await Order.findById(req.params.id);
         if (order && order.customerId !== 'vendor_manual') {
-            // If status was previously NEW or COOKING, and it's being cancelled
-            // We consider this a potential strike if checks fail?
-            // For simplicity: All cancellations contribute to strikes for now, 
-            // as the frontend handles "legit" cancellations via UI warnings.
             await handleSpamStrike(order.customerId, order.customerName);
         }
     }
+    // If Delivered (Completed), maybe we should reward user by resetting strikes?
+    // For now, keeping strict logic: Strikes only reset on Unban.
 
     await Order.findByIdAndUpdate(req.params.id, { status, updatedAt: Date.now() });
     res.json({ success: true });
@@ -371,8 +381,8 @@ app.get('/api/admin/settings', async (req, res) => {
 });
 
 app.put('/api/admin/settings', async (req, res) => {
-    const { isBanSystemActive } = req.body;
-    await SystemSettings.findOneAndUpdate({ key: 'GLOBAL_SETTINGS' }, { isBanSystemActive }, { upsert: true });
+    const updates = req.body; // Handle generic updates (banSystem, shopOpen)
+    await SystemSettings.findOneAndUpdate({ key: 'GLOBAL_SETTINGS' }, updates, { upsert: true });
     res.json({ success: true });
 });
 
@@ -383,11 +393,13 @@ app.get('/api/admin/banned-users', async (req, res) => {
 
 app.post('/api/admin/unban-user', async (req, res) => {
     const { customerId } = req.body;
+    // UNBAN: Reset strikes to 0 so they don't get banned immediately again.
     await SpamRecord.findOneAndUpdate({ customerId }, { isBanned: false, strikes: 0 });
     res.json({ success: true });
 });
 
 app.post('/api/admin/unban-all', async (req, res) => {
+    // UNBAN ALL: Reset strikes to 0 for everyone.
     await SpamRecord.updateMany({}, { isBanned: false, strikes: 0 });
     res.json({ success: true });
 });
