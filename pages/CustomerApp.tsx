@@ -1,6 +1,5 @@
-
 import React, { useEffect, useState, useRef } from 'react';
-import { ShoppingBag, Utensils, Clock, LogOut, ChevronRight, User as UserIcon, Mail, ArrowRight, Search, Star, Flame } from 'lucide-react';
+import { ShoppingBag, Utensils, Clock, LogOut, ChevronRight, User as UserIcon, Mail, ArrowRight, Search, Star, Flame, Timer } from 'lucide-react';
 import { MenuItem, CartItem, Order, OrderStatus, User } from '../types';
 import { db, parseJwt } from '../services/storage';
 import { CartSheet } from '../components/CartSheet';
@@ -200,6 +199,15 @@ export const CustomerApp: React.FC = () => {
       }
   };
 
+  const getEstTime = (status: OrderStatus) => {
+    switch (status) {
+      case OrderStatus.NEW: return "Waiting for confirmation...";
+      case OrderStatus.COOKING: return "~10-15 mins";
+      case OrderStatus.READY: return "Ready now!";
+      default: return "";
+    }
+  }
+
   // --- RENDER VIEWS ---
 
   if (view === 'LOGIN') {
@@ -305,25 +313,30 @@ export const CustomerApp: React.FC = () => {
      let headerBg = 'bg-orange-600';
      let title = 'Order Placed!';
      let subtitle = 'Show this screen to the counter';
+     let estTime = getEstTime(activeOrder.status);
  
      if (isCancelled) {
        headerBg = 'bg-red-600';
        title = 'Order Cancelled';
        subtitle = 'This order was cancelled';
+       estTime = "";
      } else if (isDelivered) {
        headerBg = 'bg-emerald-600';
        title = 'Order Delivered';
        subtitle = 'Enjoy your meal!';
+       estTime = "";
      } else if (activeOrder.status === OrderStatus.READY) {
-       headerBg = 'bg-green-600';
+       headerBg = 'bg-green-600 animate-pulse';
        title = 'Order Ready!';
        subtitle = 'Please pick up your order';
+     } else if (activeOrder.status === OrderStatus.COOKING) {
+        title = 'Preparing...';
      }
 
      return (
         <div className="min-h-screen bg-slate-50 flex flex-col">
              {/* Nav Back */}
-             <div className={`${headerBg} p-4 text-white flex items-center gap-2`}>
+             <div className={`${headerBg} p-4 text-white flex items-center gap-2 transition-colors duration-500`}>
                  <button onClick={() => setView('MENU')} className="p-2 bg-white/20 rounded-full hover:bg-white/30 transition-colors">
                     <ChevronRight size={20} className="rotate-180" />
                  </button>
@@ -332,14 +345,21 @@ export const CustomerApp: React.FC = () => {
 
              <div className="flex-1 p-6 flex flex-col items-center justify-start">
                 <div className="w-full max-w-md bg-white rounded-3xl shadow-xl overflow-hidden border border-slate-100">
-                    <div className={`${headerBg} p-6 text-center text-white transition-colors duration-300`}>
+                    <div className={`${headerBg} p-6 text-center text-white transition-colors duration-500`}>
                         <h2 className="text-2xl font-bold mb-1">{title}</h2>
                         <p className="opacity-90 text-sm">{subtitle}</p>
                     </div>
                     
                     <div className="p-8 flex flex-col items-center text-center">
                         <div className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">Your Token</div>
-                        <div className="text-6xl font-black text-slate-900 mb-8 font-mono tracking-tight">{activeOrder.token}</div>
+                        <div className="text-6xl font-black text-slate-900 mb-6 font-mono tracking-tight">{activeOrder.token}</div>
+                        
+                        {estTime && (
+                          <div className="mb-6 flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-full border border-slate-100">
+                             <Timer size={16} className="text-slate-400" />
+                             <span className="text-sm font-bold text-slate-600">{estTime}</span>
+                          </div>
+                        )}
                         
                         <div className="w-full space-y-6">
                         <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
@@ -542,7 +562,7 @@ export const CustomerApp: React.FC = () => {
                                     </div>
                                     <button 
                                         onClick={() => addToCart(item)}
-                                        className="mt-3 w-full bg-orange-50 hover:bg-orange-100 text-orange-700 text-xs font-bold py-2 rounded-lg"
+                                        className="mt-3 w-full bg-orange-50 hover:bg-orange-100 text-orange-700 text-xs font-bold py-2 rounded-lg transition-all active:scale-95"
                                     >
                                         ADD
                                     </button>
@@ -571,7 +591,7 @@ export const CustomerApp: React.FC = () => {
                     return (
                         <div key={cat} ref={el => { categoryRefs.current[cat] = el; }} className="scroll-mt-36">
                             <h2 className="text-lg font-bold text-slate-800 mb-3 px-1">{cat}</h2>
-                            <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden divide-y divide-slate-50">
+                            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden divide-y divide-slate-50">
                                 {items.map(item => (
                                     <div key={item.id} className="p-4 flex justify-between items-center gap-3">
                                         <div className="flex-1">
@@ -597,7 +617,7 @@ export const CustomerApp: React.FC = () => {
 
       {/* Floating Cart Button */}
       {cartCount > 0 && (
-          <div className="fixed bottom-6 left-0 right-0 px-6 max-w-md mx-auto z-20">
+          <div className="fixed bottom-6 left-0 right-0 px-6 max-w-md mx-auto z-20 animate-in slide-in-from-bottom-4 duration-300">
               <button 
                 onClick={() => setIsCartOpen(true)}
                 className="w-full bg-slate-900 text-white p-4 rounded-2xl shadow-xl flex justify-between items-center font-bold transform transition hover:scale-[1.02] active:scale-95"

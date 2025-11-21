@@ -1,0 +1,23 @@
+{
+  "name": "CampusBytes",
+  "short_name": "CampusBytes",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#ea580c",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "https://api.dicebear.com/9.x/icons/png?seed=CampusBytes&backgroundColor=ea580c",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "https://api.dicebear.com/9.x/icons/png?seed=CampusBytes&backgroundColor=ea580c",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

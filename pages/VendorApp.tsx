@@ -5,8 +5,37 @@ import { Order, OrderStatus, PaymentStatus, MenuItem } from '../types';
 import { 
   RefreshCw, Check, DollarSign, User, Power, RotateCcw, ChevronRight, 
   CheckCircle2, Utensils, PackageCheck, Clock, BellRing, ChefHat, 
-  Search, Menu as MenuIcon, Lock, ArrowRight, Undo2
+  Search, Menu as MenuIcon, Lock, ArrowRight, Undo2, BarChart3, X, Bell
 } from 'lucide-react';
+
+// Simple "Ding" sound base64
+const NOTIFICATION_SOUND = "data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU"; // Shortened placeholder, replaced with functional one below in logic
+const REAL_NOTIFICATION_SOUND = "data:audio/mp3;base64,SUQzBAAAAAABAFRYWFgAAAASAAADbWFqb3JfYnJhbmQAbXA0MgBUWFhYAAAAEQAAA21pbm9yX3ZlcnNpb24AMABUWFhYAAAAHAAAA2NvbXBhdGlibGVfYnJhbmRzAGlzb21tcDQyAFRTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//uQZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWgAAAA0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAv/7kGRzgAAAH+AAAAAABAAABpAAAACAAADSAAAAMAEAAAGkAAAAIAAANIAAAAwAAAAAAAAAAAAAAAAAAAAAA"; 
+
+// Using a reliable beep sound data URI
+const PLAY_SOUND = () => {
+  try {
+    // Short pleasant beep
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(500, audioContext.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(1000, audioContext.currentTime + 0.1);
+    
+    gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+    
+    oscillator.start();
+    oscillator.stop(audioContext.currentTime + 0.5);
+  } catch (e) {
+    console.error("Audio play failed", e);
+  }
+};
 
 export const VendorApp: React.FC = () => {
   // --- STATE ---
@@ -15,6 +44,11 @@ export const VendorApp: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>([]);
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [isMenuLoading, setIsMenuLoading] = useState(false);
+  const [showStats, setShowStats] = useState(false);
+  
+  // NOTIFICATIONS
+  const [newOrderToast, setNewOrderToast] = useState<string | null>(null);
+  const prevOrderIds = useRef<Set<string>>(new Set());
   
   // TABS: 'NEW' | 'COOKING' | 'READY' | 'HISTORY' | 'MENU'
   const [activeTab, setActiveTab] = useState<string>('NEW');
@@ -53,6 +87,34 @@ export const VendorApp: React.FC = () => {
       return () => unsubscribe();
     }
   }, [isAuthenticated]);
+
+  // --- NOTIFICATION LOGIC ---
+  useEffect(() => {
+    if (orders.length > 0) {
+      const currentNewOrders = orders.filter(o => o.status === OrderStatus.NEW);
+      const currentIds = new Set(orders.map(o => o.id));
+
+      // Skip the first load to avoid spamming
+      if (prevOrderIds.current.size > 0) {
+        // Check if there is a NEW order that wasn't in the previous set
+        const brandNewOrder = currentNewOrders.find(o => !prevOrderIds.current.has(o.id));
+        
+        if (brandNewOrder) {
+          // 1. Play Sound
+          PLAY_SOUND();
+          
+          // 2. Show Visual Toast
+          setNewOrderToast(brandNewOrder.token);
+          
+          // 3. Auto hide toast after 4s
+          setTimeout(() => setNewOrderToast(null), 4000);
+        }
+      }
+
+      // Update Ref
+      prevOrderIds.current = currentIds;
+    }
+  }, [orders]);
 
   // --- ACTIONS ---
   const updateStatus = async (orderId: string, status: OrderStatus) => {
@@ -111,6 +173,30 @@ export const VendorApp: React.FC = () => {
     ['All', ...Array.from(new Set(menu.map(m => m.category))).sort()], 
   [menu]);
 
+  // --- STATS CALCULATION ---
+  const stats = useMemo(() => {
+    const completedOrders = orders.filter(o => o.status === OrderStatus.DELIVERED);
+    const totalOrders = completedOrders.length;
+    
+    // Calculate most popular items
+    const itemCounts: {[key: string]: number} = {};
+    completedOrders.forEach(o => {
+      o.items.forEach(i => {
+        itemCounts[i.name] = (itemCounts[i.name] || 0) + i.quantity;
+      });
+    });
+    
+    const topItems = Object.entries(itemCounts)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 3);
+
+    return {
+      totalOrders,
+      avgOrderValue: totalOrders > 0 ? Math.round(revenue / totalOrders) : 0,
+      topItems
+    };
+  }, [orders, revenue]);
+
   // --- SCROLL HELPER ---
   const scrollToCat = (cat: string) => {
     setMenuCatFilter(cat);
@@ -151,8 +237,75 @@ export const VendorApp: React.FC = () => {
 
   // --- RENDER: DASHBOARD ---
   return (
-    <div className="min-h-screen bg-slate-100 pb-24 sm:pb-0 flex flex-col">
+    <div className="min-h-screen bg-slate-100 pb-24 sm:pb-0 flex flex-col relative">
       
+      {/* NEW ORDER TOAST NOTIFICATION */}
+      {newOrderToast && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-top-10 fade-in duration-300 w-full max-w-[90%] sm:max-w-sm">
+          <div className="bg-slate-900 text-white p-4 rounded-2xl shadow-2xl flex items-center justify-between border border-slate-800">
+             <div className="flex items-center gap-3">
+               <div className="bg-orange-500 p-2 rounded-full animate-pulse">
+                 <BellRing size={20} className="text-white" />
+               </div>
+               <div>
+                 <div className="font-bold text-orange-400 text-xs uppercase tracking-wider">New Order</div>
+                 <div className="font-black text-lg">{newOrderToast}</div>
+               </div>
+             </div>
+             <button onClick={() => setNewOrderToast(null)} className="p-2 hover:bg-slate-800 rounded-full">
+               <X size={18} className="text-slate-400" />
+             </button>
+          </div>
+        </div>
+      )}
+
+      {/* STATS MODAL */}
+      {showStats && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div className="bg-slate-900 p-5 flex justify-between items-center">
+               <h2 className="text-white font-bold text-lg flex items-center gap-2">
+                 <BarChart3 className="text-orange-500" /> Sales Report
+               </h2>
+               <button onClick={() => setShowStats(false)} className="text-slate-400 hover:text-white bg-white/10 p-1 rounded-full">
+                 <X size={20} />
+               </button>
+            </div>
+            <div className="p-6 space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                 <div className="bg-green-50 p-4 rounded-2xl border border-green-100">
+                    <div className="text-xs text-green-600 font-bold uppercase mb-1">Revenue</div>
+                    <div className="text-2xl font-black text-green-800">₹{revenue}</div>
+                 </div>
+                 <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
+                    <div className="text-xs text-blue-600 font-bold uppercase mb-1">Orders</div>
+                    <div className="text-2xl font-black text-blue-800">{stats.totalOrders}</div>
+                 </div>
+              </div>
+              
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                 <div className="text-xs text-slate-500 font-bold uppercase mb-3">Top Selling Items</div>
+                 {stats.topItems.length > 0 ? (
+                   <div className="space-y-3">
+                     {stats.topItems.map(([name, count], idx) => (
+                       <div key={name} className="flex justify-between items-center text-sm">
+                          <div className="flex items-center gap-3">
+                             <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${idx === 0 ? 'bg-orange-100 text-orange-700' : 'bg-slate-200 text-slate-600'}`}>{idx + 1}</span>
+                             <span className="font-medium text-slate-700">{name}</span>
+                          </div>
+                          <span className="font-bold text-slate-900">{count} sold</span>
+                       </div>
+                     ))}
+                   </div>
+                 ) : (
+                   <div className="text-center text-slate-400 text-sm py-2">No sales data yet</div>
+                 )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* HEADER */}
       <header className="bg-slate-900 text-white sticky top-0 z-30 shadow-md">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
@@ -169,10 +322,14 @@ export const VendorApp: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
-             <div className="hidden sm:flex items-center gap-1 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 text-emerald-400 font-mono font-bold text-sm">
-                <DollarSign size={14} /> {revenue}
-             </div>
+          <div className="flex items-center gap-2">
+             <button 
+                onClick={() => setShowStats(true)}
+                className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors"
+             >
+                <BarChart3 size={14} className="text-orange-400" /> 
+                <span className="font-mono font-bold text-sm text-white">₹{revenue}</span>
+             </button>
              <button 
                onClick={() => window.location.reload()}
                className="p-2 bg-slate-800 hover:bg-slate-700 rounded-full text-slate-400 transition-colors"
