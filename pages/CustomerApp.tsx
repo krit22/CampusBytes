@@ -580,7 +580,7 @@ export const CustomerApp: React.FC = () => {
                     <Utensils size={20} />
                 </div>
                 <div>
-                    <h1 className="font-bold text-slate-800 leading-tight">CampusBytes</h1>
+                    <h1 className="font-bold text-slate-800 leading-tight">Food Palace</h1>
                     <p className="text-xs text-slate-500 max-w-[120px] truncate">Hello, {user?.name.split(' ')[0]}</p>
                 </div>
             </div>
