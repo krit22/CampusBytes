@@ -113,13 +113,10 @@ const INITIAL_MENU = [
 // Get Menu (Auto-seed / Update)
 app.get('/api/menu', async (req, res) => {
   try {
-    // Sync DB with INITIAL_MENU (Upsert strategy)
-    // This ensures changes to prices/categories in code are reflected in DB,
-    // while preserving existing IDs.
     const bulkOps = INITIAL_MENU.map(item => ({
       updateOne: {
         filter: { name: item.name },
-        update: { $set: item }, // Updates price, category, desc, bestseller status
+        update: { $set: item },
         upsert: true
       }
     }));
@@ -129,7 +126,6 @@ app.get('/api/menu', async (req, res) => {
     }
     
     let items = await Menu.find();
-    // Map _id to id for frontend
     const formatted = items.map(i => ({ id: i._id, ...i.toObject() }));
     res.json(formatted);
   } catch (e) {
@@ -153,7 +149,35 @@ app.post('/api/orders', async (req, res) => {
   try {
     const { customerId, customerName, items, totalAmount, paymentMethod } = req.body;
     
-    // Generate Token (Simple Random)
+    // --- ANTI-SPAM & RATE LIMITING LOGIC ---
+    
+    // 1. Check total active orders for this user
+    // We do not want one person clogging the queue with 10 fake orders
+    const activeOrdersCount = await Order.countDocuments({
+        customerId,
+        status: { $in: ['NEW', 'COOKING', 'READY'] }
+    });
+
+    if (activeOrdersCount >= 3) {
+        return res.status(429).json({ 
+            error: "Order Limit Reached. You have 3 active orders. Please wait for them to be completed." 
+        });
+    }
+
+    // 2. Cooldown check (Optional: Prevent double clicks or scripts)
+    // Check if last order was made in the last 30 seconds
+    const lastOrder = await Order.findOne({ customerId }).sort({ createdAt: -1 });
+    if (lastOrder) {
+        const timeDiff = Date.now() - lastOrder.createdAt;
+        if (timeDiff < 30000) { // 30 seconds
+            return res.status(429).json({ 
+                error: "Please wait a moment before placing another order." 
+            });
+        }
+    }
+    
+    // ---------------------------------------
+
     const token = `R-${Math.floor(Math.random() * 900) + 100}`;
     
     const newOrder = new Order({

@@ -88,15 +88,8 @@ export const CustomerApp: React.FC = () => {
       const unsubscribe = db.subscribeToOrders((allOrders) => {
         // Filter for this user
         const myOrders = allOrders.filter(o => o.customerId === user.id).sort((a,b) => b.createdAt - a.createdAt);
-        // Only update if we are not currently optimistic, or merge intelligently. 
-        // For simplicity, we replace, but since our optimistic cancel changes 'focusedOrder' 
-        // and 'userOrders' immediately, we should be careful.
-        // However, since subscription updates happen frequently, and backend confirms quickly,
-        // this simple replacement is usually fine unless network is very slow.
         setUserOrders(myOrders);
         
-        // Update focused order if it exists and hasn't been optimistically cancelled yet by us
-        // or if the server confirms the cancellation
         if (focusedOrder) {
             const updated = myOrders.find(o => o.id === focusedOrder.id);
             if (updated) setFocusedOrder(updated);
@@ -170,7 +163,6 @@ export const CustomerApp: React.FC = () => {
       }
       return [...prev, { ...item, quantity: 1 }];
     });
-    // Removed setIsCartOpen(true) to prevent popping up constantly
   };
 
   const updateQuantity = (itemId: string, delta: number) => {
@@ -194,9 +186,11 @@ export const CustomerApp: React.FC = () => {
       setView('ORDER_DETAILS');
       setCart([]);
       setIsCartOpen(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Order failed", error);
-      alert("Failed to place order. Please try again.");
+      // Error handling logic to catch rate limiting
+      const msg = error.message === 'Failed to fetch' ? "Network error." : "Order failed.";
+      alert(msg + " Check if you have too many active orders.");
     } finally {
       setIsPlacingOrder(false);
     }
@@ -238,7 +232,7 @@ export const CustomerApp: React.FC = () => {
 
   const getEstTime = (status: OrderStatus) => {
     switch (status) {
-      case OrderStatus.NEW: return "Waiting for confirmation...";
+      case OrderStatus.NEW: return "Go to counter & listen for Token";
       case OrderStatus.COOKING: return "~10-15 mins";
       case OrderStatus.READY: return "Ready now!";
       default: return "";
@@ -368,6 +362,10 @@ export const CustomerApp: React.FC = () => {
        subtitle = 'Please pick up your order';
      } else if (activeOrder.status === OrderStatus.COOKING) {
         title = 'Preparing...';
+     } else if (activeOrder.status === OrderStatus.NEW) {
+        title = 'Go to Counter';
+        subtitle = 'Listen for your Token number';
+        headerBg = 'bg-blue-600';
      }
 
      return (
