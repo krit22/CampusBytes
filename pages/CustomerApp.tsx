@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useRef } from 'react';
-import { ShoppingBag, Utensils, Clock, LogOut, ChevronRight, User as UserIcon, Mail, ArrowRight, Search, Flame, Timer, Lightbulb, Sparkles, RotateCcw, CheckCircle2, AlertCircle, Plus } from 'lucide-react';
+import { ShoppingBag, Utensils, Clock, LogOut, ChevronRight, User as UserIcon, Mail, ArrowRight, Search, Flame, Timer, Lightbulb, Sparkles, RotateCcw, CheckCircle2, AlertCircle, Plus, Lock, ShieldBan } from 'lucide-react';
 import { MenuItem, CartItem, Order, OrderStatus, User } from '../types';
 import { db, parseJwt } from '../services/storage';
 import { CartSheet } from '../components/CartSheet';
@@ -20,6 +20,61 @@ const TRIVIA_FACTS = [
     "A single spaghetti noodle is called a spaghetto."
 ];
 
+// --- SUBCOMPONENTS ---
+
+const ConfirmationModal = ({ config, onClose }: { config: any, onClose: () => void }) => {
+    if (!config.isOpen) return null;
+    return (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl transform scale-100 animate-in zoom-in-95 duration-200 border border-slate-100">
+                <h3 className={`text-xl font-bold mb-2 ${config.type === 'DANGER' ? 'text-red-600' : 'text-slate-900'}`}>
+                    {config.title}
+                </h3>
+                <p className="text-slate-600 mb-6">{config.message}</p>
+                <div className="flex gap-3">
+                    <button
+                        onClick={onClose}
+                        className="flex-1 py-3 rounded-xl font-bold bg-slate-100 text-slate-600 hover:bg-slate-200"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={() => {
+                            config.onConfirm();
+                            onClose();
+                        }}
+                        className={`flex-1 py-3 rounded-xl font-bold text-white shadow-lg ${
+                            config.type === 'DANGER' 
+                            ? 'bg-red-600 hover:bg-red-700 shadow-red-200' 
+                            : 'bg-slate-900 hover:bg-slate-800 shadow-slate-200'
+                        }`}
+                    >
+                        Confirm
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const ToastNotification = ({ toast }: { toast: { msg: string, type: 'SUCCESS' | 'ERROR' | 'INFO' } | null }) => {
+    if (!toast) return null;
+    return (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[160] w-[90%] max-w-sm animate-in slide-in-from-top-5 duration-300">
+            <div className={`p-4 rounded-xl shadow-xl border flex items-center gap-3 ${
+                toast.type === 'SUCCESS' ? 'bg-slate-900 text-white border-slate-800' :
+                toast.type === 'ERROR' ? 'bg-red-600 text-white border-red-500' :
+                'bg-white text-slate-900 border-slate-200'
+            }`}>
+                {toast.type === 'SUCCESS' ? <CheckCircle2 size={20} className="text-green-400" /> :
+                    toast.type === 'ERROR' ? <AlertCircle size={20} className="text-white" /> :
+                    <Sparkles size={20} className="text-blue-500" />}
+                <div className="font-bold text-sm">{toast.msg}</div>
+            </div>
+        </div>
+    );
+};
+
 export const CustomerApp: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
   const [menu, setMenu] = useState<MenuItem[]>([]);
@@ -27,15 +82,27 @@ export const CustomerApp: React.FC = () => {
   const [userOrders, setUserOrders] = useState<Order[]>([]);
   
   // UI States
-  const [view, setView] = useState<'LOGIN' | 'MENU' | 'ORDER_DETAILS' | 'HISTORY'>('LOGIN');
+  const [view, setView] = useState<'LOGIN' | 'MENU' | 'ORDER_DETAILS' | 'HISTORY' | 'BANNED'>('LOGIN');
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [focusedOrder, setFocusedOrder] = useState<Order | null>(null);
   const [dailyFact, setDailyFact] = useState('');
   
+  // Ban State
+  const [banInfo, setBanInfo] = useState<{reason: string, expiresAt: number} | null>(null);
+  
   // Notification Toast State
   const [toast, setToast] = useState<{msg: string, type: 'SUCCESS' | 'ERROR' | 'INFO'} | null>(null);
+
+  // Confirm Modal State
+  const [confirmConfig, setConfirmConfig] = useState<{
+      isOpen: boolean;
+      title: string;
+      message: string;
+      onConfirm: () => void;
+      type: 'DANGER' | 'NEUTRAL';
+  }>({ isOpen: false, title: '', message: '', onConfirm: () => {}, type: 'NEUTRAL' });
 
   // Menu UI States
   const [searchQuery, setSearchQuery] = useState('');
@@ -87,7 +154,7 @@ export const CustomerApp: React.FC = () => {
 
   // Subscription for Order Updates
   useEffect(() => {
-    if (user) {
+    if (user && view !== 'BANNED') {
       const unsubscribe = db.subscribeToOrders((allOrders) => {
         // Filter for this user
         const myOrders = allOrders.filter(o => o.customerId === user.id).sort((a,b) => b.createdAt - a.createdAt);
@@ -100,7 +167,7 @@ export const CustomerApp: React.FC = () => {
       });
       return () => unsubscribe();
     }
-  }, [user, focusedOrder]);
+  }, [user, focusedOrder, view]);
 
   // Toast Timer
   useEffect(() => {
@@ -112,6 +179,10 @@ export const CustomerApp: React.FC = () => {
 
   const showToast = (msg: string, type: 'SUCCESS' | 'ERROR' | 'INFO' = 'INFO') => {
     setToast({ msg, type });
+  };
+
+  const requestConfirm = (title: string, message: string, action: () => void, type: 'DANGER' | 'NEUTRAL' = 'NEUTRAL') => {
+      setConfirmConfig({ isOpen: true, title, message, onConfirm: action, type });
   };
 
   const handleGoogleCredentialResponse = async (response: any) => {
@@ -163,10 +234,20 @@ export const CustomerApp: React.FC = () => {
   };
 
   const handleLogout = async () => {
-    if (confirm('Sign out of CampusBytes?')) {
-      await db.logout();
-      window.location.reload();
-    }
+    requestConfirm(
+        'Sign Out',
+        'Are you sure you want to sign out of CampusBytes?',
+        async () => {
+            await db.logout();
+            // Manually reset state to avoid browser reload blank page issues
+            setUser(null);
+            setMenu([]);
+            setCart([]);
+            setUserOrders([]);
+            setView('LOGIN');
+        },
+        'NEUTRAL'
+    );
   };
 
   const addToCart = (item: MenuItem) => {
@@ -253,9 +334,16 @@ export const CustomerApp: React.FC = () => {
       setIsCartOpen(false);
     } catch (error: any) {
       console.error("Order failed", error);
-      // Error handling logic to catch rate limiting
-      const msg = error.message === 'Failed to fetch' ? "Network error." : "Order failed.";
-      alert(msg + " Check if you have too many active orders.");
+      
+      if (error.status === 403) { // BANNED
+        const data = error.data;
+        setBanInfo({ reason: data.banReason, expiresAt: data.banExpiresAt });
+        setView('BANNED');
+        setIsCartOpen(false);
+      } else {
+          const msg = error.message === 'Failed to fetch' ? "Network error." : (error.message || "Order failed.");
+          alert(msg);
+      }
     } finally {
       setIsPlacingOrder(false);
     }
@@ -264,29 +352,33 @@ export const CustomerApp: React.FC = () => {
   const handleCancelOrder = async () => {
     if (!focusedOrder) return;
     
-    // Explicit check - user must type or click strongly confirmation
-    if (window.confirm('WAIT! Are you absolutely sure you want to cancel your food? This cannot be undone.')) {
-      // 1. Snapshot for revert
-      const previousOrder = { ...focusedOrder };
-      const previousList = [...userOrders];
+    requestConfirm(
+        'Cancel Order?',
+        'Are you sure? Cancelling too many orders will lead to an account suspension.',
+        async () => {
+            // 1. Snapshot for revert
+            const previousOrder = { ...focusedOrder };
+            const previousList = [...userOrders];
 
-      // 2. Optimistic Update
-      const cancelledOrder = { ...focusedOrder, status: OrderStatus.CANCELLED };
-      setFocusedOrder(cancelledOrder);
-      setUserOrders(prev => prev.map(o => o.id === focusedOrder.id ? cancelledOrder : o));
+            // 2. Optimistic Update
+            const cancelledOrder = { ...focusedOrder, status: OrderStatus.CANCELLED };
+            setFocusedOrder(cancelledOrder);
+            setUserOrders(prev => prev.map(o => o.id === focusedOrder.id ? cancelledOrder : o));
 
-      try {
-        // 3. API Call
-        await db.updateOrderStatus(focusedOrder.id, OrderStatus.CANCELLED);
-        showToast("Order cancelled.", "INFO");
-      } catch (error) {
-        // 4. Revert on failure
-        console.error("Failed to cancel order", error);
-        setFocusedOrder(previousOrder);
-        setUserOrders(previousList);
-        showToast("Failed to cancel. Network error?", "ERROR");
-      }
-    }
+            try {
+                // 3. API Call
+                await db.updateOrderStatus(focusedOrder.id, OrderStatus.CANCELLED);
+                showToast("Order cancelled.", "INFO");
+            } catch (error) {
+                // 4. Revert on failure
+                console.error("Failed to cancel order", error);
+                setFocusedOrder(previousOrder);
+                setUserOrders(previousList);
+                showToast("Failed to cancel. Network error?", "ERROR");
+            }
+        },
+        'DANGER'
+    );
   };
   
   const scrollToCategory = (cat: string) => {
@@ -306,6 +398,37 @@ export const CustomerApp: React.FC = () => {
   }
 
   // --- RENDER VIEWS ---
+
+  if (view === 'BANNED' && banInfo) {
+      const date = new Date(banInfo.expiresAt);
+      return (
+        <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-white text-center">
+            <div className="w-24 h-24 bg-red-900/30 rounded-full flex items-center justify-center mb-6 border-4 border-red-600 animate-pulse">
+                <ShieldBan size={50} className="text-red-500" />
+            </div>
+            <h1 className="text-3xl font-black mb-2 tracking-tight">Account Suspended</h1>
+            <p className="text-slate-400 mb-8">Suspicious activity detected.</p>
+            
+            <div className="bg-slate-900 rounded-2xl p-6 w-full max-w-sm border border-slate-800 space-y-4">
+                <div>
+                    <div className="text-xs font-bold text-slate-500 uppercase">Reason</div>
+                    <div className="font-medium text-red-400">{banInfo.reason}</div>
+                </div>
+                <div>
+                    <div className="text-xs font-bold text-slate-500 uppercase">Ban Expires</div>
+                    <div className="font-mono text-lg">{date.toLocaleDateString()} {date.toLocaleTimeString()}</div>
+                </div>
+            </div>
+            
+            <button 
+                onClick={() => window.location.reload()}
+                className="mt-8 px-6 py-3 bg-white text-slate-900 font-bold rounded-full hover:bg-slate-200"
+            >
+                Refresh Status
+            </button>
+        </div>
+      );
+  }
 
   if (view === 'LOGIN') {
     return (
@@ -436,6 +559,10 @@ export const CustomerApp: React.FC = () => {
 
      return (
         <div className="min-h-screen bg-slate-50 flex flex-col">
+             {/* GLOBAL COMPONENTS */}
+             <ConfirmationModal config={confirmConfig} onClose={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} />
+             <ToastNotification toast={toast} />
+
              {/* Nav Back */}
              <div className={`${headerBg} p-4 text-white flex items-center gap-2 transition-colors duration-500`}>
                  <button onClick={() => setView('MENU')} className="p-2 bg-white/20 rounded-full hover:bg-white/30 transition-colors">
@@ -534,23 +661,49 @@ export const CustomerApp: React.FC = () => {
   }
 
   if (view === 'HISTORY') {
+      const activeHistoryOrders = userOrders.filter(o => [OrderStatus.NEW, OrderStatus.COOKING, OrderStatus.READY].includes(o.status));
+      const pastHistoryOrders = userOrders.filter(o => [OrderStatus.DELIVERED, OrderStatus.CANCELLED].includes(o.status));
+
+      const OrderCard = ({ order }: { order: Order }) => (
+        <div 
+            onClick={() => { setFocusedOrder(order); setView('ORDER_DETAILS'); }}
+            className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 active:scale-[0.98] transition-transform group"
+        >
+            <div className="flex justify-between items-start mb-3">
+                <div className="flex items-center gap-2">
+                    <span className="font-mono font-bold text-lg bg-slate-100 px-2 rounded text-slate-700">{order.token}</span>
+                    <div className="text-xs text-slate-500">{new Date(order.createdAt).toLocaleDateString()}</div>
+                </div>
+                <Badge status={order.status} />
+            </div>
+            <div className="text-sm text-slate-600 mb-3">
+                {order.items.map(i => `${i.quantity}x ${i.name}`).join(', ')}
+            </div>
+            <div className="flex justify-between items-center pt-2 border-t border-slate-50">
+                <span className="text-sm font-bold">₹{order.totalAmount}</span>
+                
+                <div className="flex items-center gap-2">
+                    {/* Reorder Button */}
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); handleReorder(order); }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-200 text-orange-600 bg-orange-50 hover:bg-orange-100 font-bold text-xs transition-colors"
+                    >
+                        <RotateCcw size={12} /> Reorder
+                    </button>
+                    
+                    <span className="text-slate-400 group-hover:text-orange-600 transition-colors">
+                        <ChevronRight size={16} />
+                    </span>
+                </div>
+            </div>
+        </div>
+      );
+
       return (
           <div className="min-h-screen bg-slate-50">
-              {/* TOAST */}
-              {toast && (
-                  <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-sm animate-in slide-in-from-top-5 duration-300">
-                    <div className={`p-4 rounded-xl shadow-xl border flex items-center gap-3 ${
-                        toast.type === 'SUCCESS' ? 'bg-green-900 text-white border-green-800' :
-                        toast.type === 'ERROR' ? 'bg-red-900 text-white border-red-800' :
-                        'bg-slate-900 text-white border-slate-800'
-                    }`}>
-                        {toast.type === 'SUCCESS' ? <CheckCircle2 size={20} className="text-green-400" /> :
-                         toast.type === 'ERROR' ? <AlertCircle size={20} className="text-red-400" /> :
-                         <Sparkles size={20} className="text-blue-400" />}
-                        <div className="font-medium text-sm">{toast.msg}</div>
-                    </div>
-                  </div>
-              )}
+              {/* GLOBAL COMPONENTS */}
+              <ConfirmationModal config={confirmConfig} onClose={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} />
+              <ToastNotification toast={toast} />
 
               <header className="bg-white sticky top-0 z-10 px-5 py-4 border-b border-slate-100 flex items-center gap-3 shadow-sm">
                     <button onClick={() => setView('MENU')} className="p-2 -ml-2 hover:bg-slate-100 rounded-full text-slate-600">
@@ -558,7 +711,7 @@ export const CustomerApp: React.FC = () => {
                     </button>
                     <h1 className="font-bold text-lg text-slate-800">My Orders</h1>
               </header>
-              <div className="p-5 space-y-4 max-w-md mx-auto pb-24">
+              <div className="p-5 space-y-8 max-w-md mx-auto pb-24">
                   {userOrders.length === 0 ? (
                       <div className="text-center py-20 text-slate-400">
                           <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-4 text-slate-300">
@@ -568,43 +721,42 @@ export const CustomerApp: React.FC = () => {
                           <button onClick={() => setView('MENU')} className="text-orange-600 font-bold text-sm mt-2">Start Ordering</button>
                       </div>
                   ) : (
-                      userOrders.map(order => (
-                          <div 
-                            key={order.id} 
-                            onClick={() => { setFocusedOrder(order); setView('ORDER_DETAILS'); }}
-                            className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 active:scale-[0.98] transition-transform group"
-                          >
-                              <div className="flex justify-between items-start mb-3">
-                                  <div className="flex items-center gap-2">
-                                      <span className="font-mono font-bold text-lg bg-slate-100 px-2 rounded text-slate-700">{order.token}</span>
-                                      <div className="text-xs text-slate-500">{new Date(order.createdAt).toLocaleDateString()}</div>
-                                  </div>
-                                  <Badge status={order.status} />
-                              </div>
-                              <div className="text-sm text-slate-600 mb-3">
-                                  {order.items.map(i => `${i.quantity}x ${i.name}`).join(', ')}
-                              </div>
-                              <div className="flex justify-between items-center pt-2 border-t border-slate-50">
-                                  <span className="text-sm font-bold">₹{order.totalAmount}</span>
-                                  
-                                  <div className="flex items-center gap-2">
-                                      {/* Reorder Button */}
-                                      <button 
-                                        onClick={(e) => { e.stopPropagation(); handleReorder(order); }}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-200 text-orange-600 bg-orange-50 hover:bg-orange-100 font-bold text-xs transition-colors"
-                                      >
-                                          <RotateCcw size={12} /> Reorder
-                                      </button>
-                                      
-                                      <span className="text-slate-400 group-hover:text-orange-600 transition-colors">
-                                          <ChevronRight size={16} />
-                                      </span>
+                      <>
+                          {/* Active Orders Section */}
+                          {activeHistoryOrders.length > 0 && (
+                              <div>
+                                  <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                      <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                                      Active Orders
+                                  </h3>
+                                  <div className="space-y-4">
+                                      {activeHistoryOrders.map(order => <OrderCard key={order.id} order={order} />)}
                                   </div>
                               </div>
-                          </div>
-                      ))
+                          )}
+
+                          {/* Past Orders Section */}
+                          {pastHistoryOrders.length > 0 && (
+                              <div>
+                                  <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3">Past Orders</h3>
+                                  <div className="space-y-4 opacity-90 grayscale-[0.3]">
+                                      {pastHistoryOrders.map(order => <OrderCard key={order.id} order={order} />)}
+                                  </div>
+                              </div>
+                          )}
+                      </>
                   )}
               </div>
+
+              {/* Cart Sheet must be rendered here so Reorder works! */}
+              <CartSheet 
+                isOpen={isCartOpen}
+                onClose={() => setIsCartOpen(false)}
+                items={cart}
+                onUpdateQuantity={updateQuantity}
+                onPlaceOrder={handlePlaceOrder}
+                isPlacingOrder={isPlacingOrder}
+              />
           </div>
       )
   }
@@ -627,23 +779,13 @@ export const CustomerApp: React.FC = () => {
     : categories;
 
   return (
-    <div className="min-h-screen pb-24 max-w-md mx-auto bg-slate-50 border-x border-slate-100 shadow-2xl">
+    <div className="min-h-screen pb-24 max-w-md mx-auto bg-slate-50 border-x border-slate-100 shadow-2xl relative">
       
+      {/* CONFIRMATION MODAL */}
+      <ConfirmationModal config={confirmConfig} onClose={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} />
+
       {/* CUSTOMER TOAST (Menu view) */}
-      {toast && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-sm animate-in slide-in-from-top-5 duration-300">
-            <div className={`p-4 rounded-xl shadow-xl border flex items-center gap-3 ${
-                toast.type === 'SUCCESS' ? 'bg-slate-900 text-white border-slate-800' :
-                toast.type === 'ERROR' ? 'bg-red-600 text-white border-red-500' :
-                'bg-white text-slate-900 border-slate-200'
-            }`}>
-                {toast.type === 'SUCCESS' ? <CheckCircle2 size={20} className="text-green-400" /> :
-                    toast.type === 'ERROR' ? <AlertCircle size={20} className="text-white" /> :
-                    <Sparkles size={20} className="text-blue-500" />}
-                <div className="font-bold text-sm">{toast.msg}</div>
-            </div>
-        </div>
-      )}
+      <ToastNotification toast={toast} />
 
       {/* Header */}
       <header className="bg-white sticky top-0 z-20 shadow-sm">

@@ -1,5 +1,5 @@
 
-import { MenuItem, Order, OrderStatus, PaymentStatus, User } from '../types';
+import { MenuItem, Order, OrderStatus, PaymentStatus, User, SpamRecord, SystemSettings } from '../types';
 
 // Get API URL from Environment, default to Render for AI Studio/Dev
 // Use optional chaining safely
@@ -105,7 +105,15 @@ export const apiDb = {
         paymentMethod
       })
     });
-    if (!res.ok) throw new Error('Failed to create order');
+    
+    // Handle Errors (403 Ban, 429 Rate Limit)
+    if (!res.ok) {
+        const errorData = await res.json();
+        const error: any = new Error(errorData.error || 'Failed to create order');
+        error.status = res.status;
+        error.data = errorData; // Contains ban details
+        throw error;
+    }
     return res.json();
   },
   
@@ -165,5 +173,46 @@ export const apiDb = {
       }
     }, 3000);
     return () => clearInterval(interval);
+  },
+
+  // --- ADMIN / SECURITY ---
+  getSystemSettings: async (): Promise<SystemSettings> => {
+    try {
+        const res = await fetch(`${API_URL}/api/admin/settings`);
+        return res.json();
+    } catch (e) {
+        return { isBanSystemActive: true };
+    }
+  },
+
+  toggleBanSystem: async (isActive: boolean): Promise<void> => {
+    await fetch(`${API_URL}/api/admin/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isBanSystemActive: isActive })
+    });
+  },
+
+  getBannedUsers: async (): Promise<SpamRecord[]> => {
+    try {
+        const res = await fetch(`${API_URL}/api/admin/banned-users`);
+        return res.json();
+    } catch (e) {
+        return [];
+    }
+  },
+
+  unbanUser: async (customerId: string): Promise<void> => {
+    await fetch(`${API_URL}/api/admin/unban-user`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerId })
+    });
+  },
+
+  unbanAllUsers: async (): Promise<void> => {
+    await fetch(`${API_URL}/api/admin/unban-all`, {
+        method: 'POST'
+    });
   }
 };

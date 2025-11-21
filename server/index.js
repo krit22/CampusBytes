@@ -33,8 +33,26 @@ const OrderSchema = new mongoose.Schema({
   updatedAt: { type: Number, default: Date.now }
 });
 
+// SECURITY SCHEMAS
+const SpamRecordSchema = new mongoose.Schema({
+  customerId: String,
+  customerName: String,
+  strikes: { type: Number, default: 0 },
+  isBanned: { type: Boolean, default: false },
+  banExpiresAt: { type: Number, default: 0 },
+  banReason: String,
+  lastStrikeAt: { type: Number, default: Date.now }
+});
+
+const SystemSettingsSchema = new mongoose.Schema({
+  key: { type: String, default: 'GLOBAL_SETTINGS', unique: true },
+  isBanSystemActive: { type: Boolean, default: true }
+});
+
 const Menu = mongoose.model('Menu', MenuSchema);
 const Order = mongoose.model('Order', OrderSchema);
+const SpamRecord = mongoose.model('SpamRecord', SpamRecordSchema);
+const SystemSettings = mongoose.model('SystemSettings', SystemSettingsSchema);
 
 // --- INITIAL DATA SEED ---
 const INITIAL_MENU = [
@@ -108,6 +126,51 @@ const INITIAL_MENU = [
   { name: 'Lachha Paratha + Chicken Kosha', description: '2pcs Chicken', price: 100, category: 'Combo', isAvailable: true }
 ];
 
+// --- HELPER FUNCTIONS FOR SECURITY ---
+
+async function getSystemSettings() {
+  let settings = await SystemSettings.findOne({ key: 'GLOBAL_SETTINGS' });
+  if (!settings) {
+    settings = new SystemSettings();
+    await settings.save();
+  }
+  return settings;
+}
+
+async function handleSpamStrike(customerId, customerName) {
+  const settings = await getSystemSettings();
+  if (!settings.isBanSystemActive) return;
+
+  let record = await SpamRecord.findOne({ customerId });
+  if (!record) {
+    record = new SpamRecord({ customerId, customerName });
+  }
+
+  record.strikes += 1;
+  record.lastStrikeAt = Date.now();
+
+  // BAN LOGIC
+  // Strike 1: 1 Hour
+  // Strike 2: 24 Hours
+  // Strike 3: Permanent (99 Years)
+  
+  if (record.strikes === 1) {
+    record.isBanned = true;
+    record.banExpiresAt = Date.now() + (60 * 60 * 1000); // 1 Hour
+    record.banReason = "Temp Ban (1h): Suspicious cancellation activity.";
+  } else if (record.strikes === 2) {
+    record.isBanned = true;
+    record.banExpiresAt = Date.now() + (24 * 60 * 60 * 1000); // 24 Hours
+    record.banReason = "Suspension (24h): Repeated misuse detected.";
+  } else if (record.strikes >= 3) {
+    record.isBanned = true;
+    record.banExpiresAt = Date.now() + (99 * 365 * 24 * 60 * 60 * 1000); // Permanent
+    record.banReason = "PERMANENT BAN: Policy violation. Contact admin.";
+  }
+
+  await record.save();
+}
+
 // --- ROUTES ---
 
 // Get Menu (Auto-seed / Update)
@@ -117,14 +180,12 @@ app.get('/api/menu', async (req, res) => {
       updateOne: {
         filter: { name: item.name },
         update: { 
-            // Fields from code (Static) - Updates every time
             $set: { 
                 description: item.description, 
                 price: item.price, 
                 category: item.category, 
                 isBestseller: item.isBestseller 
             },
-            // Fields from DB state (Dynamic) - Only sets on creation, preserved otherwise
             $setOnInsert: { 
                 name: item.name, 
                 isAvailable: item.isAvailable 
@@ -183,8 +244,29 @@ app.post('/api/orders', async (req, res) => {
   try {
     const { customerId, customerName, items, totalAmount, paymentMethod } = req.body;
     
-    // --- ANTI-SPAM & RATE LIMITING LOGIC ---
-    
+    // --- SECURITY & BAN CHECK ---
+    const settings = await getSystemSettings();
+    if (settings.isBanSystemActive && customerId !== 'vendor_manual') {
+        const record = await SpamRecord.findOne({ customerId });
+        if (record && record.isBanned) {
+            // Check expiry
+            if (Date.now() > record.banExpiresAt) {
+                // Ban expired, unban user
+                record.isBanned = false;
+                record.strikes = 0; // Optional: Reset strikes or keep history? Reset for mercy.
+                await record.save();
+            } else {
+                // Still banned
+                return res.status(403).json({
+                    error: "Account Suspended",
+                    banReason: record.banReason,
+                    banExpiresAt: record.banExpiresAt
+                });
+            }
+        }
+    }
+    // ----------------------------
+
     // BYPASS FOR VENDOR MANUAL ORDERS
     if (customerId !== 'vendor_manual') {
         // 1. Check total active orders for this user
@@ -211,11 +293,6 @@ app.post('/api/orders', async (req, res) => {
         }
     }
     
-    // ---------------------------------------
-
-    // If vendor manual, generate a token with 'M' prefix for distinction? Or keep 'R' for consistency?
-    // Let's stick to 'R' but maybe a different range to avoid collisions?
-    // Actually, collisions are rare with random 900. Let's just use standard logic.
     const token = `R-${Math.floor(Math.random() * 900) + 100}`;
     
     const newOrder = new Order({
@@ -255,6 +332,19 @@ app.get('/api/orders', async (req, res) => {
 app.put('/api/orders/:id/status', async (req, res) => {
   try {
     const { status } = req.body;
+    
+    // Check if this is a cancellation to track strikes
+    if (status === 'CANCELLED') {
+        const order = await Order.findById(req.params.id);
+        if (order && order.customerId !== 'vendor_manual') {
+            // If status was previously NEW or COOKING, and it's being cancelled
+            // We consider this a potential strike if checks fail?
+            // For simplicity: All cancellations contribute to strikes for now, 
+            // as the frontend handles "legit" cancellations via UI warnings.
+            await handleSpamStrike(order.customerId, order.customerName);
+        }
+    }
+
     await Order.findByIdAndUpdate(req.params.id, { status, updatedAt: Date.now() });
     res.json({ success: true });
   } catch (e) {
@@ -272,6 +362,36 @@ app.put('/api/orders/:id/payment', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
+// --- ADMIN / SECURITY ENDPOINTS ---
+
+app.get('/api/admin/settings', async (req, res) => {
+    const settings = await getSystemSettings();
+    res.json(settings);
+});
+
+app.put('/api/admin/settings', async (req, res) => {
+    const { isBanSystemActive } = req.body;
+    await SystemSettings.findOneAndUpdate({ key: 'GLOBAL_SETTINGS' }, { isBanSystemActive }, { upsert: true });
+    res.json({ success: true });
+});
+
+app.get('/api/admin/banned-users', async (req, res) => {
+    const bans = await SpamRecord.find({ isBanned: true });
+    res.json(bans);
+});
+
+app.post('/api/admin/unban-user', async (req, res) => {
+    const { customerId } = req.body;
+    await SpamRecord.findOneAndUpdate({ customerId }, { isBanned: false, strikes: 0 });
+    res.json({ success: true });
+});
+
+app.post('/api/admin/unban-all', async (req, res) => {
+    await SpamRecord.updateMany({}, { isBanned: false, strikes: 0 });
+    res.json({ success: true });
+});
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {

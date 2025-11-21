@@ -1,12 +1,12 @@
 
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { db } from '../services/storage';
-import { Order, OrderStatus, PaymentStatus, MenuItem, CartItem } from '../types';
+import { Order, OrderStatus, PaymentStatus, MenuItem, CartItem, SpamRecord, SystemSettings } from '../types';
 import { 
   RefreshCw, Check, DollarSign, Lock, RotateCcw, ChevronRight, 
   CheckCircle2, Utensils, PackageCheck, Clock, BellRing, ChefHat, 
   Search, Menu as MenuIcon, BarChart3, X, AlertTriangle, Ban, Undo2,
-  Timer, Plus, Trash2, TrendingUp, ClipboardList, Minus, Moon, Sun
+  Timer, Plus, Trash2, TrendingUp, ClipboardList, Minus, Moon, Sun, ShieldAlert, ShieldCheck, Unlock
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, 
@@ -59,6 +59,15 @@ const PLAY_SOUND = async (type: 'NEW' | 'CANCEL' = 'NEW') => {
   }
 };
 
+// CONFIRMATION TYPE
+type ConfirmConfig = {
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+    type: 'DANGER' | 'NEUTRAL';
+};
+
 export const VendorApp: React.FC = () => {
   // --- STATE ---
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -70,6 +79,16 @@ export const VendorApp: React.FC = () => {
   const [showAddMenuModal, setShowAddMenuModal] = useState(false);
   const [showManualOrderModal, setShowManualOrderModal] = useState(false);
   const [currentTime, setCurrentTime] = useState(Date.now());
+  
+  // Confirmation Modal State
+  const [confirmConfig, setConfirmConfig] = useState<ConfirmConfig>({ 
+      isOpen: false, title: '', message: '', onConfirm: () => {}, type: 'NEUTRAL' 
+  });
+
+  // Helper for requesting confirmation
+  const requestConfirm = (title: string, message: string, action: () => void, type: 'DANGER' | 'NEUTRAL' = 'NEUTRAL') => {
+      setConfirmConfig({ isOpen: true, title, message, onConfirm: action, type });
+  };
   
   // DARK MODE STATE
   const [darkMode, setDarkMode] = useState(() => {
@@ -88,7 +107,7 @@ export const VendorApp: React.FC = () => {
   // We track the status of every order to detect changes
   const prevOrderStatusMap = useRef<Map<string, OrderStatus>>(new Map());
   
-  // TABS: 'NEW' | 'COOKING' | 'READY' | 'HISTORY' | 'MENU'
+  // TABS: 'NEW' | 'COOKING' | 'READY' | 'HISTORY' | 'MENU' | 'SECURITY'
   const [activeTab, setActiveTab] = useState<string>('NEW');
 
   // MENU FILTERS
@@ -269,14 +288,20 @@ export const VendorApp: React.FC = () => {
      }
   };
 
-  const handleDeleteItem = async (itemId: string) => {
-    if(!confirm("Are you sure you want to delete this item permanently?")) return;
-    try {
-        await db.deleteMenuItem(itemId);
-        setMenu(prev => prev.filter(m => m.id !== itemId));
-    } catch (e) {
-        alert("Failed to delete item.");
-    }
+  const handleDeleteItem = (itemId: string) => {
+    requestConfirm(
+        "Delete Item",
+        "Are you sure you want to delete this item permanently? This cannot be undone.",
+        async () => {
+            try {
+                await db.deleteMenuItem(itemId);
+                setMenu(prev => prev.filter(m => m.id !== itemId));
+            } catch (e) {
+                alert("Failed to delete item.");
+            }
+        },
+        'DANGER'
+    );
   };
 
   // --- COMPUTED DATA ---
@@ -284,7 +309,7 @@ export const VendorApp: React.FC = () => {
     if (activeTab === 'HISTORY') {
       return orders.filter(o => o.status === OrderStatus.DELIVERED || o.status === OrderStatus.CANCELLED);
     }
-    if (activeTab === 'MENU') return [];
+    if (activeTab === 'MENU' || activeTab === 'SECURITY') return [];
     return orders.filter(o => o.status === activeTab);
   }, [orders, activeTab]);
 
@@ -320,7 +345,7 @@ export const VendorApp: React.FC = () => {
             <Lock className="text-white" size={32} />
           </div>
           <h1 className="text-2xl font-black text-white mb-2">Vendor Portal</h1>
-          <p className="text-slate-500 mb-8 text-sm font-mono">System v3.5 (Operations)</p>
+          <p className="text-slate-500 mb-8 text-sm font-mono">System v4.0 (Operations)</p>
           
           <form onSubmit={handleLogin} className="space-y-4">
             <input 
@@ -345,6 +370,9 @@ export const VendorApp: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-100 dark:bg-slate-950 pb-24 sm:pb-0 flex flex-col relative transition-colors duration-300">
       
+      {/* CONFIRMATION MODAL */}
+      <ConfirmationModal config={confirmConfig} onClose={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} />
+
       {/* TOAST NOTIFICATION */}
       {toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-top-10 fade-in duration-300 w-full max-w-[90%] sm:max-w-sm">
@@ -403,7 +431,7 @@ export const VendorApp: React.FC = () => {
               <h1 className="font-bold leading-none">CampusBytes</h1>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-[10px] font-mono text-slate-400">VENDOR</span>
-                <span className="text-[9px] bg-green-900 text-green-400 px-1.5 rounded border border-green-800">v3.5</span>
+                <span className="text-[9px] bg-green-900 text-green-400 px-1.5 rounded border border-green-800">v4.0</span>
               </div>
             </div>
           </div>
@@ -434,7 +462,7 @@ export const VendorApp: React.FC = () => {
 
         {/* DESKTOP NAV */}
         <div className="hidden sm:flex bg-slate-950 justify-center border-t border-slate-800">
-           {['NEW', 'COOKING', 'READY', 'HISTORY', 'MENU'].map(tab => (
+           {['NEW', 'COOKING', 'READY', 'HISTORY', 'MENU', 'SECURITY'].map(tab => (
              <DesktopTab 
                key={tab} 
                id={tab} 
@@ -449,8 +477,10 @@ export const VendorApp: React.FC = () => {
       {/* MAIN CONTENT */}
       <main className="flex-1 max-w-5xl mx-auto w-full p-4">
         
-        {/* --- VIEW: MENU MANAGEMENT --- */}
-        {activeTab === 'MENU' ? (
+        {/* --- VIEW: SECURITY / ADMIN --- */}
+        {activeTab === 'SECURITY' ? (
+            <SecurityPanel requestConfirm={requestConfirm} />
+        ) : activeTab === 'MENU' ? (
           <div className="animate-in fade-in duration-300 space-y-4">
             <div className="bg-white dark:bg-slate-850 p-4 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 sticky top-[70px] sm:top-16 z-20 transition-colors">
                <div className="relative mb-4">
@@ -624,7 +654,12 @@ export const VendorApp: React.FC = () => {
                             {order.status === OrderStatus.NEW && (
                             <div className="flex gap-2">
                                 <button 
-                                    onClick={() => { if(confirm("Reject this order as 'No Show'?")) updateStatus(order.id, OrderStatus.CANCELLED); }}
+                                    onClick={() => requestConfirm(
+                                        "Reject Order", 
+                                        "Reject this order as 'No Show'? This will add a strike to the user.",
+                                        () => updateStatus(order.id, OrderStatus.CANCELLED),
+                                        'DANGER'
+                                    )}
                                     className="px-3 py-3 bg-red-50 hover:bg-red-100 text-red-500 border border-red-200 dark:bg-red-900/20 dark:border-red-900/50 dark:hover:bg-red-900/40 rounded-xl"
                                     title="Reject / No Show"
                                 >
@@ -649,9 +684,14 @@ export const VendorApp: React.FC = () => {
                                     <Undo2 size={18} />
                                 </button>
                                 <button 
-                                onClick={() => { if(confirm("Force cancel this order?")) updateStatus(order.id, OrderStatus.CANCELLED); }}
-                                className="px-3 py-3 bg-red-50 hover:bg-red-100 text-red-500 border border-red-200 dark:bg-red-900/20 dark:border-red-900/50 dark:hover:bg-red-900/40 rounded-xl"
-                                title="Force Cancel"
+                                    onClick={() => requestConfirm(
+                                        "Force Cancel", 
+                                        "Are you sure you want to force cancel this order? This action is irreversible.",
+                                        () => updateStatus(order.id, OrderStatus.CANCELLED),
+                                        'DANGER'
+                                    )}
+                                    className="px-3 py-3 bg-red-50 hover:bg-red-100 text-red-500 border border-red-200 dark:bg-red-900/20 dark:border-red-900/50 dark:hover:bg-red-900/40 rounded-xl"
+                                    title="Force Cancel"
                                 >
                                 <X size={18} />
                                 </button>
@@ -674,9 +714,14 @@ export const VendorApp: React.FC = () => {
                                     <Undo2 size={18} />
                                 </button>
                                 <button 
-                                onClick={() => { if(confirm("Force cancel this order?")) updateStatus(order.id, OrderStatus.CANCELLED); }}
-                                className="px-3 py-3 bg-red-50 hover:bg-red-100 text-red-500 border border-red-200 dark:bg-red-900/20 dark:border-red-900/50 dark:hover:bg-red-900/40 rounded-xl"
-                                title="Force Cancel"
+                                    onClick={() => requestConfirm(
+                                        "Force Cancel", 
+                                        "Are you sure you want to force cancel this order? This action is irreversible.",
+                                        () => updateStatus(order.id, OrderStatus.CANCELLED),
+                                        'DANGER'
+                                    )}
+                                    className="px-3 py-3 bg-red-50 hover:bg-red-100 text-red-500 border border-red-200 dark:bg-red-900/20 dark:border-red-900/50 dark:hover:bg-red-900/40 rounded-xl"
+                                    title="Force Cancel"
                                 >
                                 <X size={18} />
                                 </button>
@@ -720,12 +765,13 @@ export const VendorApp: React.FC = () => {
 
       {/* MOBILE BOTTOM NAV */}
       <nav className="sm:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 z-50 pb-safe shadow-[0_-10px_30px_rgba(0,0,0,0.05)] transition-colors">
-        <div className="grid grid-cols-5 h-16">
+        <div className="grid grid-cols-6 h-16">
            <MobileTab id="NEW" icon={BellRing} label="Pending" active={activeTab} onClick={setActiveTab} count={counts.NEW} />
            <MobileTab id="COOKING" icon={ChefHat} label="Kitchen" active={activeTab} onClick={setActiveTab} count={counts.COOKING} />
            <MobileTab id="READY" icon={Utensils} label="Serve" active={activeTab} onClick={setActiveTab} count={counts.READY} />
            <MobileTab id="HISTORY" icon={Clock} label="History" active={activeTab} onClick={setActiveTab} count={0} />
            <MobileTab id="MENU" icon={MenuIcon} label="Menu" active={activeTab} onClick={setActiveTab} count={0} />
+           <MobileTab id="SECURITY" icon={ShieldAlert} label="Security" active={activeTab} onClick={setActiveTab} count={0} />
         </div>
       </nav>
 
@@ -734,6 +780,125 @@ export const VendorApp: React.FC = () => {
 };
 
 // --- SUBCOMPONENTS ---
+
+const ConfirmationModal = ({ config, onClose }: { config: ConfirmConfig, onClose: () => void }) => {
+    if (!config.isOpen) return null;
+    return (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-slate-900 w-full max-w-sm rounded-2xl p-6 shadow-2xl transform scale-100 animate-in zoom-in-95 duration-200 border border-slate-200 dark:border-slate-800">
+                <h3 className={`text-xl font-bold mb-2 ${config.type === 'DANGER' ? 'text-red-600 dark:text-red-500' : 'text-slate-900 dark:text-white'}`}>
+                    {config.title}
+                </h3>
+                <p className="text-slate-600 dark:text-slate-300 mb-6">{config.message}</p>
+                <div className="flex gap-3">
+                    <button
+                        onClick={onClose}
+                        className="flex-1 py-3 rounded-xl font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={() => {
+                            config.onConfirm();
+                            onClose();
+                        }}
+                        className={`flex-1 py-3 rounded-xl font-bold text-white shadow-lg ${
+                            config.type === 'DANGER' 
+                            ? 'bg-red-600 hover:bg-red-700 shadow-red-200 dark:shadow-none' 
+                            : 'bg-slate-900 hover:bg-slate-800 dark:bg-orange-600 dark:hover:bg-orange-500 shadow-slate-200 dark:shadow-none'
+                        }`}
+                    >
+                        Confirm
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const SecurityPanel = ({ requestConfirm }: { 
+    requestConfirm: (title: string, message: string, action: () => void, type: 'DANGER' | 'NEUTRAL') => void 
+}) => {
+    const [bannedUsers, setBannedUsers] = useState<SpamRecord[]>([]);
+    const [settings, setSettings] = useState<SystemSettings>({ isBanSystemActive: true });
+
+    useEffect(() => {
+        loadSecurityData();
+    }, []);
+
+    const loadSecurityData = async () => {
+        const [bans, sys] = await Promise.all([
+            db.getBannedUsers(),
+            db.getSystemSettings()
+        ]);
+        setBannedUsers(bans);
+        setSettings(sys);
+    };
+
+    const toggleSystem = async () => {
+        const newState = !settings.isBanSystemActive;
+        setSettings(prev => ({ ...prev, isBanSystemActive: newState }));
+        await db.toggleBanSystem(newState);
+    };
+
+    const unban = (id: string) => {
+        requestConfirm("Unban User", "Are you sure you want to unban this user?", async () => {
+            await db.unbanUser(id);
+            loadSecurityData();
+        }, 'NEUTRAL');
+    };
+
+    const unbanAll = () => {
+        requestConfirm("Unban ALL Users", "Are you sure you want to UNBAN ALL users? This cannot be undone.", async () => {
+            await db.unbanAllUsers();
+            loadSecurityData();
+        }, 'DANGER');
+    };
+
+    return (
+        <div className="animate-in fade-in space-y-6">
+            <div className="bg-white dark:bg-slate-850 p-6 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                <div>
+                    <h3 className="text-lg font-bold dark:text-white">Anti-Spam Protection</h3>
+                    <p className="text-sm text-slate-500">Automatically bans users after 3 cancellations.</p>
+                </div>
+                <button 
+                    onClick={toggleSystem}
+                    className={`px-6 py-2 rounded-full font-bold transition-colors ${settings.isBanSystemActive ? 'bg-green-100 text-green-700 border-green-200' : 'bg-slate-100 text-slate-500'}`}
+                >
+                    {settings.isBanSystemActive ? 'ACTIVE' : 'DISABLED'}
+                </button>
+            </div>
+
+            <div className="bg-white dark:bg-slate-850 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+                <div className="p-4 border-b dark:border-slate-800 flex justify-between items-center">
+                    <h3 className="font-bold dark:text-white">Banned Users ({bannedUsers.length})</h3>
+                    {bannedUsers.length > 0 && (
+                        <button onClick={unbanAll} className="text-xs text-red-500 font-bold hover:underline">UNBAN ALL</button>
+                    )}
+                </div>
+                {bannedUsers.length === 0 ? (
+                    <div className="p-10 text-center text-slate-400 text-sm">No banned users found.</div>
+                ) : (
+                    <div className="divide-y dark:divide-slate-800">
+                        {bannedUsers.map(user => (
+                            <div key={user.customerId} className="p-4 flex justify-between items-center">
+                                <div>
+                                    <div className="font-bold text-sm dark:text-white">{user.customerName || 'Unknown'}</div>
+                                    <div className="text-xs text-red-500 font-medium">{user.banReason}</div>
+                                    <div className="text-[10px] text-slate-400">Expires: {new Date(user.banExpiresAt).toLocaleString()}</div>
+                                </div>
+                                <button onClick={() => unban(user.customerId)} className="bg-slate-100 dark:bg-slate-800 p-2 rounded-lg text-slate-600 dark:text-slate-300 hover:bg-white shadow-sm">
+                                    <Unlock size={16} />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
 
 const ManualOrderModal = ({ menu, onClose, onOrder }: { menu: MenuItem[], onClose: () => void, onOrder: (name: string, items: any[], total: number, paymentStatus: PaymentStatus) => void }) => {
     const [customerName, setCustomerName] = useState('');

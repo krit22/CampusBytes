@@ -53,6 +53,20 @@ export interface VendorAuth {
   pin: string;
 }
 
+export interface SpamRecord {
+  customerId: string;
+  customerName: string;
+  strikes: number;
+  isBanned: boolean;
+  banExpiresAt: number; // timestamp
+  banReason: string;
+  lastStrikeAt: number;
+}
+
+export interface SystemSettings {
+  isBanSystemActive: boolean;
+}
+
 // Google Identity Services Types
 declare global {
   interface Window {

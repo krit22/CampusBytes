@@ -1,5 +1,5 @@
 
-import { MenuItem, Order, OrderStatus, PaymentStatus, User } from '../types';
+import { MenuItem, Order, OrderStatus, PaymentStatus, User, SpamRecord, SystemSettings } from '../types';
 import { apiDb } from './api';
 
 // Constants
@@ -224,6 +224,12 @@ const mockDb = {
     await delay(800);
     const orders = await mockDb.getOrders();
     
+    // Mock Rate Limit
+    const activeCount = orders.filter(o => o.customerId === user.id && ['NEW','COOKING','READY'].includes(o.status)).length;
+    if (activeCount >= 3) {
+        throw new Error("Order Limit Reached. You have 3 active orders.");
+    }
+
     const randomNum = Math.floor(Math.random() * 900) + 100;
     const token = `R-${randomNum}`;
     
@@ -300,7 +306,18 @@ const mockDb = {
       callback(orders);
     }, 1500); 
     return () => clearInterval(interval);
-  }
+  },
+
+  // --- MOCK ADMIN ---
+  getSystemSettings: async (): Promise<SystemSettings> => {
+    return { isBanSystemActive: true };
+  },
+  toggleBanSystem: async (isActive: boolean): Promise<void> => {},
+  getBannedUsers: async (): Promise<SpamRecord[]> => {
+    return [];
+  },
+  unbanUser: async (customerId: string): Promise<void> => {},
+  unbanAllUsers: async (): Promise<void> => {}
 };
 
 // --- EXTENSIONS ---
