@@ -3,20 +3,19 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { db } from '../services/storage';
 import { Order, OrderStatus, PaymentStatus, MenuItem } from '../types';
 import { 
-  RefreshCw, Check, DollarSign, User, Power, RotateCcw, ChevronRight, 
+  RefreshCw, Check, DollarSign, Lock, RotateCcw, ChevronRight, 
   CheckCircle2, Utensils, PackageCheck, Clock, BellRing, ChefHat, 
-  Search, Menu as MenuIcon, Lock, ArrowRight, Undo2, BarChart3, X, Bell, Volume2
+  Search, Menu as MenuIcon, BarChart3, X, AlertTriangle, Ban, Undo2
 } from 'lucide-react';
 
 // Robust Audio Player
-const PLAY_SOUND = async () => {
+const PLAY_SOUND = async (type: 'NEW' | 'CANCEL' = 'NEW') => {
   try {
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioContextClass) return;
 
     const audioContext = new AudioContextClass();
     
-    // Resume context if suspended (common browser policy requirement)
     if (audioContext.state === 'suspended') {
       await audioContext.resume();
     }
@@ -27,17 +26,29 @@ const PLAY_SOUND = async () => {
     oscillator.connect(gainNode);
     gainNode.connect(audioContext.destination);
     
-    // "Ding" effect
-    oscillator.type = 'sine';
-    oscillator.frequency.setValueAtTime(500, audioContext.currentTime);
-    oscillator.frequency.exponentialRampToValueAtTime(1000, audioContext.currentTime + 0.1);
-    
-    // Fade out
-    gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.5);
-    
-    oscillator.start();
-    oscillator.stop(audioContext.currentTime + 0.5);
+    if (type === 'NEW') {
+        // "Ding" effect (High pitch)
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(500, audioContext.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(1000, audioContext.currentTime + 0.1);
+        
+        gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.5);
+        
+        oscillator.start();
+        oscillator.stop(audioContext.currentTime + 0.5);
+    } else {
+        // "Bomp" effect (Low pitch) for cancellation
+        oscillator.type = 'sawtooth';
+        oscillator.frequency.setValueAtTime(150, audioContext.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(50, audioContext.currentTime + 0.3);
+        
+        gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.4);
+        
+        oscillator.start();
+        oscillator.stop(audioContext.currentTime + 0.4);
+    }
   } catch (e) {
     console.error("Audio play failed", e);
   }
@@ -53,8 +64,10 @@ export const VendorApp: React.FC = () => {
   const [showStats, setShowStats] = useState(false);
   
   // NOTIFICATIONS
-  const [newOrderToast, setNewOrderToast] = useState<string | null>(null);
-  const prevOrderIds = useRef<Set<string>>(new Set());
+  const [toast, setToast] = useState<{msg: string, type: 'NEW' | 'CANCEL'} | null>(null);
+  
+  // We track the status of every order to detect changes
+  const prevOrderStatusMap = useRef<Map<string, OrderStatus>>(new Map());
   
   // TABS: 'NEW' | 'COOKING' | 'READY' | 'HISTORY' | 'MENU'
   const [activeTab, setActiveTab] = useState<string>('NEW');
@@ -69,7 +82,6 @@ export const VendorApp: React.FC = () => {
     e.preventDefault();
     if (pin === '1234') {
       setIsAuthenticated(true);
-      // Trigger initial data load
       loadData();
     } else {
       alert('Invalid PIN (Try 1234)');
@@ -88,6 +100,10 @@ export const VendorApp: React.FC = () => {
   useEffect(() => {
     if (isAuthenticated) {
       const unsubscribe = db.subscribeToOrders((newOrders) => {
+        // We merge new data carefully to avoid overwriting optimistic updates
+        // In a polling scenario, we usually just replace. 
+        // Ideally, we check timestamps, but for simplicity, we replace here
+        // as optimistic updates are fast and temporary.
         setOrders([...newOrders].sort((a, b) => b.createdAt - a.createdAt));
       });
       return () => unsubscribe();
@@ -96,68 +112,118 @@ export const VendorApp: React.FC = () => {
 
   // --- NOTIFICATION LOGIC ---
   useEffect(() => {
-    if (orders.length > 0) {
-      const currentNewOrders = orders.filter(o => o.status === OrderStatus.NEW);
-      const currentIds = new Set(orders.map(o => o.id));
+    if (orders.length === 0) return;
 
-      // Skip the first load to avoid spamming
-      if (prevOrderIds.current.size > 0) {
-        // Check if there is a NEW order that wasn't in the previous set
-        const brandNewOrder = currentNewOrders.find(o => !prevOrderIds.current.has(o.id));
-        
-        if (brandNewOrder) {
-          // 1. Play Sound
-          PLAY_SOUND();
-          
-          // 2. Show Visual Toast
-          setNewOrderToast(brandNewOrder.token);
-          
-          // 3. Auto hide toast after 4s
-          setTimeout(() => setNewOrderToast(null), 4000);
-        }
-      }
+    // Convert current orders to a map for easy lookup
+    const currentStatusMap = new Map(orders.map(o => [o.id, o.status]));
+    const isFirstRun = prevOrderStatusMap.current.size === 0;
 
-      // Update Ref
-      prevOrderIds.current = currentIds;
+    if (!isFirstRun) {
+        orders.forEach(order => {
+            const prevStatus = prevOrderStatusMap.current.get(order.id);
+            
+            // 1. Check for NEW orders
+            if (!prevStatus && order.status === OrderStatus.NEW) {
+                PLAY_SOUND('NEW');
+                setToast({ msg: `New Order: ${order.token}`, type: 'NEW' });
+                setTimeout(() => setToast(null), 5000);
+            }
+
+            // 2. Check for CANCELLED orders
+            if (prevStatus && prevStatus !== OrderStatus.CANCELLED && order.status === OrderStatus.CANCELLED) {
+                PLAY_SOUND('CANCEL');
+                setToast({ msg: `Order Cancelled: ${order.token}`, type: 'CANCEL' });
+                setTimeout(() => setToast(null), 5000);
+            }
+        });
     }
+
+    // Update Ref
+    prevOrderStatusMap.current = currentStatusMap;
   }, [orders]);
 
-  // --- ACTIONS ---
+  // --- ACTIONS (OPTIMISTIC UI) ---
+  
   const updateStatus = async (orderId: string, status: OrderStatus) => {
-    // Optimistic update for UI responsiveness
+    // 1. Snapshot
+    const previousOrders = [...orders];
+
+    // 2. Optimistic Update
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
-    await db.updateOrderStatus(orderId, status);
+
+    try {
+      // 3. API Call
+      await db.updateOrderStatus(orderId, status);
+    } catch (error) {
+      // 4. Revert on Failure
+      console.error("Failed to update status", error);
+      setOrders(previousOrders);
+      alert("Connection failed. Changes reverted.");
+    }
   };
 
   const updatePayment = async (orderId: string, status: PaymentStatus) => {
+    // 1. Snapshot
+    const previousOrders = [...orders];
+
+    // 2. Optimistic Update
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, paymentStatus: status } : o));
-    await db.updatePaymentStatus(orderId, status);
+
+    try {
+      // 3. API Call
+      await db.updatePaymentStatus(orderId, status);
+    } catch (error) {
+      // 4. Revert on Failure
+      console.error("Failed to update payment", error);
+      setOrders(previousOrders);
+      alert("Connection failed. Changes reverted.");
+    }
   };
 
   const completeOrder = async (order: Order) => {
-    // 1. Mark Paid
-    if (order.paymentStatus !== PaymentStatus.PAID) {
-      await updatePayment(order.id, PaymentStatus.PAID);
+    // 1. Snapshot
+    const previousOrders = [...orders];
+
+    // 2. Optimistic Update
+    setOrders(prev => prev.map(o => {
+      if (o.id === order.id) {
+        return { 
+          ...o, 
+          paymentStatus: PaymentStatus.PAID, 
+          status: OrderStatus.DELIVERED 
+        };
+      }
+      return o;
+    }));
+
+    try {
+      // 3. API Calls
+      if (order.paymentStatus !== PaymentStatus.PAID) {
+        await db.updatePaymentStatus(order.id, PaymentStatus.PAID);
+      }
+      await db.updateOrderStatus(order.id, OrderStatus.DELIVERED);
+    } catch (error) {
+      // 4. Revert on Failure
+      console.error("Failed to complete order", error);
+      setOrders(previousOrders);
+      alert("Connection failed. Changes reverted.");
     }
-    // 2. Mark Delivered
-    await updateStatus(order.id, OrderStatus.DELIVERED);
   };
 
   const toggleItem = async (item: MenuItem) => {
     const newStatus = !item.isAvailable;
+    
+    // Optimistic Update
     setMenu(prev => prev.map(m => m.id === item.id ? { ...m, isAvailable: newStatus } : m));
+    
     try {
       await db.updateMenuItemStatus(item.id, newStatus);
     } catch (e) {
-      // Revert on failure
+      // Revert
+      console.error("Failed to toggle item", e);
       setMenu(prev => prev.map(m => m.id === item.id ? { ...m, isAvailable: !newStatus } : m));
+      alert("Failed to update menu item.");
     }
-  };
-
-  const testNotification = () => {
-    PLAY_SOUND();
-    setNewOrderToast("Test Order #000");
-    setTimeout(() => setNewOrderToast(null), 4000);
   };
 
   // --- COMPUTED DATA ---
@@ -166,7 +232,6 @@ export const VendorApp: React.FC = () => {
       return orders.filter(o => o.status === OrderStatus.DELIVERED || o.status === OrderStatus.CANCELLED);
     }
     if (activeTab === 'MENU') return [];
-    // For NEW, COOKING, READY
     return orders.filter(o => o.status === activeTab);
   }, [orders, activeTab]);
 
@@ -190,7 +255,6 @@ export const VendorApp: React.FC = () => {
     const completedOrders = orders.filter(o => o.status === OrderStatus.DELIVERED);
     const totalOrders = completedOrders.length;
     
-    // Calculate most popular items
     const itemCounts: {[key: string]: number} = {};
     completedOrders.forEach(o => {
       o.items.forEach(i => {
@@ -217,7 +281,7 @@ export const VendorApp: React.FC = () => {
     }
   };
 
-  // --- RENDER: LOGIN SCREEN (DARK MODE) ---
+  // --- RENDER: LOGIN SCREEN ---
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
@@ -226,7 +290,7 @@ export const VendorApp: React.FC = () => {
             <Lock className="text-white" size={32} />
           </div>
           <h1 className="text-2xl font-black text-white mb-2">Vendor Portal</h1>
-          <p className="text-slate-500 mb-8 text-sm font-mono">System v3.0 (Live)</p>
+          <p className="text-slate-500 mb-8 text-sm font-mono">System v3.1 (Live)</p>
           
           <form onSubmit={handleLogin} className="space-y-4">
             <input 
@@ -251,21 +315,21 @@ export const VendorApp: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-100 pb-24 sm:pb-0 flex flex-col relative">
       
-      {/* NEW ORDER TOAST NOTIFICATION */}
-      {newOrderToast && (
+      {/* TOAST NOTIFICATION */}
+      {toast && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-top-10 fade-in duration-300 w-full max-w-[90%] sm:max-w-sm">
-          <div className="bg-slate-900 text-white p-4 rounded-2xl shadow-2xl flex items-center justify-between border border-slate-800">
+          <div className={`p-4 rounded-2xl shadow-2xl flex items-center justify-between border ${toast.type === 'CANCEL' ? 'bg-red-900 text-white border-red-800' : 'bg-slate-900 text-white border-slate-800'}`}>
              <div className="flex items-center gap-3">
-               <div className="bg-orange-500 p-2 rounded-full animate-pulse">
-                 <BellRing size={20} className="text-white" />
+               <div className={`p-2 rounded-full animate-pulse ${toast.type === 'CANCEL' ? 'bg-red-500' : 'bg-orange-500'}`}>
+                 {toast.type === 'CANCEL' ? <AlertTriangle size={20} className="text-white" /> : <BellRing size={20} className="text-white" />}
                </div>
                <div>
-                 <div className="font-bold text-orange-400 text-xs uppercase tracking-wider">New Order</div>
-                 <div className="font-black text-lg">{newOrderToast}</div>
+                 <div className={`font-bold text-xs uppercase tracking-wider ${toast.type === 'CANCEL' ? 'text-red-300' : 'text-orange-400'}`}>{toast.type === 'CANCEL' ? 'Alert' : 'New Order'}</div>
+                 <div className="font-black text-lg">{toast.msg}</div>
                </div>
              </div>
-             <button onClick={() => setNewOrderToast(null)} className="p-2 hover:bg-slate-800 rounded-full">
-               <X size={18} className="text-slate-400" />
+             <button onClick={() => setToast(null)} className="p-2 hover:bg-white/10 rounded-full">
+               <X size={18} className="text-white/60" />
              </button>
           </div>
         </div>
@@ -329,19 +393,12 @@ export const VendorApp: React.FC = () => {
               <h1 className="font-bold leading-none">CampusBytes</h1>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-[10px] font-mono text-slate-400">VENDOR</span>
-                <span className="text-[9px] bg-green-900 text-green-400 px-1.5 rounded border border-green-800">v3.0</span>
+                <span className="text-[9px] bg-green-900 text-green-400 px-1.5 rounded border border-green-800">v3.1</span>
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-             <button 
-               onClick={testNotification}
-               className="p-2 bg-slate-800 hover:bg-slate-700 rounded-full text-slate-400 hover:text-orange-400 transition-colors"
-               title="Test Notification Sound"
-             >
-                <Volume2 size={18} />
-             </button>
              <button 
                 onClick={() => setShowStats(true)}
                 className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors"
@@ -378,7 +435,6 @@ export const VendorApp: React.FC = () => {
         {/* --- VIEW: MENU MANAGEMENT --- */}
         {activeTab === 'MENU' ? (
           <div className="animate-in fade-in duration-300 space-y-4">
-            {/* Menu Filters */}
             <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200 sticky top-[70px] sm:top-16 z-20">
                <div className="relative mb-4">
                  <Search className="absolute left-3 top-3.5 text-slate-400" size={18} />
@@ -403,7 +459,6 @@ export const VendorApp: React.FC = () => {
                </div>
             </div>
 
-            {/* Menu List */}
             <div className="space-y-6">
                {menuCategories.filter(c => c !== 'All').map(cat => {
                  const items = menu.filter(m => 
@@ -450,20 +505,21 @@ export const VendorApp: React.FC = () => {
               </div>
             ) : (
               filteredOrders.map(order => (
-                <div key={order.id} className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col animate-in slide-in-from-bottom-4">
+                <div key={order.id} className={`rounded-2xl shadow-sm border overflow-hidden flex flex-col animate-in slide-in-from-bottom-4 ${order.status === OrderStatus.CANCELLED ? 'bg-red-50 border-red-100' : 'bg-white border-slate-200'}`}>
                    {/* Status Bar */}
                    <div className="h-1 w-full bg-slate-100">
                       <div className={`h-full transition-all duration-500 ${
                         order.status === 'NEW' ? 'w-1/3 bg-blue-500' : 
                         order.status === 'COOKING' ? 'w-2/3 bg-orange-500' : 
-                        order.status === 'READY' ? 'w-full bg-green-500' : 'w-full bg-slate-400'
+                        order.status === 'READY' ? 'w-full bg-green-500' : 
+                        order.status === 'CANCELLED' ? 'w-full bg-red-500' : 'w-full bg-slate-400'
                       }`} />
                    </div>
                    
                    {/* Card Header */}
-                   <div className="p-4 border-b border-slate-50 flex justify-between items-start">
+                   <div className={`p-4 border-b flex justify-between items-start ${order.status === OrderStatus.CANCELLED ? 'border-red-100' : 'border-slate-50'}`}>
                       <div>
-                        <span className="text-3xl font-black text-slate-800 tracking-tighter">{order.token}</span>
+                        <span className={`text-3xl font-black tracking-tighter ${order.status === OrderStatus.CANCELLED ? 'text-red-800 decoration-2 line-through decoration-red-400' : 'text-slate-800'}`}>{order.token}</span>
                         <div className="text-xs font-bold text-slate-400 uppercase mt-1">{order.customerName || 'Guest'}</div>
                       </div>
                       <div className="text-right">
@@ -478,7 +534,7 @@ export const VendorApp: React.FC = () => {
                    </div>
 
                    {/* Items */}
-                   <div className="p-4 flex-1 bg-slate-50/30 space-y-2">
+                   <div className="p-4 flex-1 space-y-2 bg-slate-50/30">
                       {order.items.map((item, i) => (
                         <div key={i} className="flex justify-between text-sm">
                            <span className="text-slate-600 font-medium"><b className="text-slate-900">{item.quantity}x</b> {item.name}</span>
@@ -486,9 +542,8 @@ export const VendorApp: React.FC = () => {
                       ))}
                    </div>
 
-                   {/* Action Footer - Dynamic based on Status */}
+                   {/* Action Footer */}
                    <div className="p-3 border-t border-slate-100 bg-white">
-                      {/* NEW -> COOKING */}
                       {order.status === OrderStatus.NEW && (
                         <button 
                           onClick={() => updateStatus(order.id, OrderStatus.COOKING)}
@@ -498,7 +553,6 @@ export const VendorApp: React.FC = () => {
                         </button>
                       )}
 
-                      {/* COOKING -> READY */}
                       {order.status === OrderStatus.COOKING && (
                         <div className="flex gap-2">
                           <button 
@@ -517,7 +571,6 @@ export const VendorApp: React.FC = () => {
                         </div>
                       )}
 
-                      {/* READY -> DONE */}
                       {order.status === OrderStatus.READY && (
                         <div className="flex gap-2">
                           <button 
@@ -536,7 +589,6 @@ export const VendorApp: React.FC = () => {
                         </div>
                       )}
 
-                      {/* HISTORY -> REVERT */}
                       {order.status === OrderStatus.DELIVERED && (
                          <div className="flex items-center gap-2">
                            <div className="flex-1 bg-slate-100 text-slate-500 font-bold text-xs py-3 rounded-xl flex items-center justify-center gap-1">
@@ -552,8 +604,8 @@ export const VendorApp: React.FC = () => {
                       )}
                       
                       {order.status === OrderStatus.CANCELLED && (
-                          <div className="bg-red-50 text-red-500 font-bold text-xs py-3 rounded-xl text-center border border-red-100">
-                            CANCELLED
+                          <div className="flex items-center justify-center gap-2 bg-red-100 text-red-600 font-bold text-xs py-3 rounded-xl border border-red-200">
+                            <Ban size={14} /> CANCELLED
                           </div>
                       )}
                    </div>

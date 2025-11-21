@@ -1,5 +1,6 @@
+
 import React, { useEffect, useState, useRef } from 'react';
-import { ShoppingBag, Utensils, Clock, LogOut, ChevronRight, User as UserIcon, Mail, ArrowRight, Search, Star, Flame, Timer } from 'lucide-react';
+import { ShoppingBag, Utensils, Clock, LogOut, ChevronRight, User as UserIcon, Mail, ArrowRight, Search, Flame, Timer, Lightbulb, Sparkles } from 'lucide-react';
 import { MenuItem, CartItem, Order, OrderStatus, User } from '../types';
 import { db, parseJwt } from '../services/storage';
 import { CartSheet } from '../components/CartSheet';
@@ -7,6 +8,17 @@ import { Badge } from '../components/Badge';
 
 // CONFIG
 const GOOGLE_CLIENT_ID = import.meta.env?.VITE_GOOGLE_CLIENT_ID || "";
+
+const TRIVIA_FACTS = [
+    "Honey never spoils. You can eat 3000-year-old honey!",
+    "Bananas are berries, but strawberries aren't.",
+    "Carrots were originally purple, not orange.",
+    "Apples float because they are 25% air.",
+    "Potatoes were the first food grown in space.",
+    "Broccoli contains more protein per calorie than steak.",
+    "Chocolate was once used as currency.",
+    "A single spaghetti noodle is called a spaghetto."
+];
 
 export const CustomerApp: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -20,6 +32,7 @@ export const CustomerApp: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [focusedOrder, setFocusedOrder] = useState<Order | null>(null);
+  const [dailyFact, setDailyFact] = useState('');
   
   // Menu UI States
   const [searchQuery, setSearchQuery] = useState('');
@@ -47,6 +60,10 @@ export const CustomerApp: React.FC = () => {
     checkUser();
   }, []);
 
+  useEffect(() => {
+      setDailyFact(TRIVIA_FACTS[Math.floor(Math.random() * TRIVIA_FACTS.length)]);
+  }, [view]);
+
   // Google Auth Initialization
   useEffect(() => {
     if (view === 'LOGIN' && GOOGLE_CLIENT_ID && window.google) {
@@ -71,9 +88,15 @@ export const CustomerApp: React.FC = () => {
       const unsubscribe = db.subscribeToOrders((allOrders) => {
         // Filter for this user
         const myOrders = allOrders.filter(o => o.customerId === user.id).sort((a,b) => b.createdAt - a.createdAt);
+        // Only update if we are not currently optimistic, or merge intelligently. 
+        // For simplicity, we replace, but since our optimistic cancel changes 'focusedOrder' 
+        // and 'userOrders' immediately, we should be careful.
+        // However, since subscription updates happen frequently, and backend confirms quickly,
+        // this simple replacement is usually fine unless network is very slow.
         setUserOrders(myOrders);
         
-        // Update focused order if it exists
+        // Update focused order if it exists and hasn't been optimistically cancelled yet by us
+        // or if the server confirms the cancellation
         if (focusedOrder) {
             const updated = myOrders.find(o => o.id === focusedOrder.id);
             if (updated) setFocusedOrder(updated);
@@ -134,12 +157,12 @@ export const CustomerApp: React.FC = () => {
   const handleLogout = async () => {
     if (confirm('Sign out of CampusBytes?')) {
       await db.logout();
-      // Force reload to ensure clean state and proper auth re-init
       window.location.reload();
     }
   };
 
   const addToCart = (item: MenuItem) => {
+    // Add to cart is purely local, so it's naturally optimistic/instant
     setCart(prev => {
       const existing = prev.find(i => i.id === item.id);
       if (existing) {
@@ -147,7 +170,7 @@ export const CustomerApp: React.FC = () => {
       }
       return [...prev, { ...item, quantity: 1 }];
     });
-    // Removed setIsCartOpen(true) to prevent popup
+    // Removed setIsCartOpen(true) to prevent popping up constantly
   };
 
   const updateQuantity = (itemId: string, delta: number) => {
@@ -181,12 +204,26 @@ export const CustomerApp: React.FC = () => {
 
   const handleCancelOrder = async () => {
     if (!focusedOrder) return;
-    if (window.confirm('Are you sure you want to cancel this order?')) {
+    
+    // Explicit check - user must type or click strongly confirmation
+    if (window.confirm('WAIT! Are you absolutely sure you want to cancel your food? This cannot be undone.')) {
+      // 1. Snapshot for revert
+      const previousOrder = { ...focusedOrder };
+      const previousList = [...userOrders];
+
+      // 2. Optimistic Update
+      const cancelledOrder = { ...focusedOrder, status: OrderStatus.CANCELLED };
+      setFocusedOrder(cancelledOrder);
+      setUserOrders(prev => prev.map(o => o.id === focusedOrder.id ? cancelledOrder : o));
+
       try {
+        // 3. API Call
         await db.updateOrderStatus(focusedOrder.id, OrderStatus.CANCELLED);
-        // Focused order will update via subscription
       } catch (error) {
+        // 4. Revert on failure
         console.error("Failed to cancel order", error);
+        setFocusedOrder(previousOrder);
+        setUserOrders(previousList);
         alert("Failed to cancel order. Please try again.");
       }
     }
@@ -362,45 +399,68 @@ export const CustomerApp: React.FC = () => {
                         )}
                         
                         <div className="w-full space-y-6">
-                        <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
-                            <div className="flex items-center gap-3">
-                                <div className={`p-2 rounded-full ${activeOrder.status === OrderStatus.NEW ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
-                                    <Clock size={20} />
-                                </div>
-                                <div className="text-left">
-                                    <div className="text-xs text-slate-500 font-medium">Status</div>
-                                    <div className="font-bold text-slate-800"><Badge status={activeOrder.status} /></div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div className="border-t pt-6">
-                            <h3 className="text-left font-bold text-slate-800 mb-4">Order Summary</h3>
-                            <div className="space-y-3">
-                                {activeOrder.items.map((item, idx) => (
-                                    <div key={idx} className="flex justify-between text-sm">
-                                        <span className="text-slate-600">{item.quantity}x {item.name}</span>
-                                        <span className="font-medium text-slate-900">₹{item.price * item.quantity}</span>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="flex justify-between items-center mt-6 pt-4 border-t border-dashed font-bold text-lg">
-                                <span>Total</span>
-                                <span className="text-orange-600">₹{activeOrder.totalAmount}</span>
-                            </div>
-                            <div className="mt-2 text-right">
-                                <Badge status={activeOrder.paymentStatus} type="payment" />
-                            </div>
-                        </div>
+                          <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
+                              <div className="flex items-center gap-3">
+                                  <div className={`p-2 rounded-full ${activeOrder.status === OrderStatus.NEW ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
+                                      <Clock size={20} />
+                                  </div>
+                                  <div className="text-left">
+                                      <div className="text-xs text-slate-500 font-medium">Status</div>
+                                      <div className="font-bold text-slate-800"><Badge status={activeOrder.status} /></div>
+                                  </div>
+                              </div>
+                          </div>
 
-                        {activeOrder.status === OrderStatus.NEW && (
-                            <button 
-                                onClick={handleCancelOrder}
-                                className="w-full py-3 border border-red-200 text-red-600 bg-red-50 hover:bg-red-100 rounded-xl font-semibold shadow-sm transition-colors"
-                            >
-                                Cancel Order
-                            </button>
-                        )}
+                          {/* FOOD TRIVIA - ENGAGEMENT */}
+                          {!isCancelled && !isDelivered && (
+                              <div className="bg-orange-50 p-4 rounded-xl border border-orange-100 flex items-start gap-3 text-left">
+                                  <Lightbulb className="shrink-0 text-orange-500 mt-1" size={18} />
+                                  <div>
+                                      <div className="text-xs font-bold text-orange-600 uppercase mb-1 flex items-center gap-1">
+                                          Foodie Fact <Sparkles size={10} />
+                                      </div>
+                                      <p className="text-xs text-slate-600 leading-relaxed">{dailyFact}</p>
+                                  </div>
+                              </div>
+                          )}
+                          
+                          <div className="border-t pt-6">
+                              <h3 className="text-left font-bold text-slate-800 mb-4">Order Summary</h3>
+                              <div className="space-y-3">
+                                  {activeOrder.items.map((item, idx) => (
+                                      <div key={idx} className="flex justify-between text-sm">
+                                          <span className="text-slate-600">{item.quantity}x {item.name}</span>
+                                          <span className="font-medium text-slate-900">₹{item.price * item.quantity}</span>
+                                      </div>
+                                  ))}
+                              </div>
+                              <div className="flex justify-between items-center mt-6 pt-4 border-t border-dashed font-bold text-lg">
+                                  <span>Total</span>
+                                  <span className="text-orange-600">₹{activeOrder.totalAmount}</span>
+                              </div>
+                              <div className="mt-2 text-right">
+                                  <Badge status={activeOrder.paymentStatus} type="payment" />
+                              </div>
+                          </div>
+
+                          {/* ACTIONS */}
+                          <div className="pt-4 space-y-3">
+                              <button 
+                                  onClick={() => setView('MENU')}
+                                  className="w-full py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-slate-800 transition-colors shadow-lg shadow-slate-200"
+                              >
+                                  Explore Menu
+                              </button>
+
+                              {activeOrder.status === OrderStatus.NEW && (
+                                  <button 
+                                      onClick={handleCancelOrder}
+                                      className="text-xs text-red-500 font-semibold hover:text-red-700 hover:underline py-2 transition-colors"
+                                  >
+                                      Cancel Order
+                                  </button>
+                              )}
+                          </div>
                         </div>
                     </div>
                 </div>
