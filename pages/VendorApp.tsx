@@ -1,9 +1,9 @@
 
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { db } from '../services/storage';
-import { Order, OrderStatus, PaymentStatus, MenuItem, CartItem } from '../types';
+import { Order, OrderStatus, PaymentStatus, MenuItem } from '../types';
 import { 
-  RefreshCw, Lock, Clock, BellRing, ChefHat, Search, Menu as MenuIcon, BarChart3, Plus, Trash2, ClipboardList, Moon, Sun, ShieldAlert, Utensils, Power
+  RefreshCw, Lock, Clock, BellRing, ChefHat, Utensils, Grid, ClipboardList 
 } from 'lucide-react';
 
 // COMPONENTS
@@ -15,6 +15,7 @@ import { AddMenuItemModal } from '../components/vendor/AddMenuItemModal';
 import { StatsDashboard } from '../components/vendor/StatsDashboard';
 import { OrderCard } from '../components/vendor/OrderCard';
 import { MenuList } from '../components/vendor/MenuList';
+import { MoreMenu } from '../components/vendor/MoreMenu';
 
 // HOOKS
 import { useAudio } from '../hooks/useAudio';
@@ -31,12 +32,14 @@ export const VendorApp: React.FC = () => {
   const [currentTime, setCurrentTime] = useState(Date.now());
   const [isShopOpen, setIsShopOpen] = useState(true);
   
+  // Refresh State
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  
   // Confirmation Modal State
   const [confirmConfig, setConfirmConfig] = useState<ConfirmConfig>({ 
       isOpen: false, title: '', message: '', onConfirm: () => {}, type: 'NEUTRAL' 
   });
 
-  // Helper for requesting confirmation
   const requestConfirm = (title: string, message: string, action: () => void, type: 'DANGER' | 'NEUTRAL' = 'NEUTRAL') => {
       setConfirmConfig({ isOpen: true, title, message, onConfirm: action, type });
   };
@@ -53,7 +56,10 @@ export const VendorApp: React.FC = () => {
 
   const [toast, setToast] = useState<ToastState | null>(null);
   const prevOrderStatusMap = useRef<Map<string, OrderStatus>>(new Map());
+  
+  // TABS: NEW, COOKING, READY, MORE (MORE contains History, Menu, Security)
   const [activeTab, setActiveTab] = useState<string>('NEW');
+  const [subTab, setSubTab] = useState<string | null>(null); // Used when inside "MORE"
 
   const { playSound } = useAudio();
 
@@ -70,12 +76,32 @@ export const VendorApp: React.FC = () => {
   };
 
   const loadData = async () => {
-    const [items, settings] = await Promise.all([
-        db.getMenu(),
-        db.getSystemSettings()
-    ]);
-    setMenu(items);
-    setIsShopOpen(settings.isShopOpen !== false);
+    try {
+        const [items, settings] = await Promise.all([
+            db.getMenu(),
+            db.getSystemSettings()
+        ]);
+        setMenu(items);
+        setIsShopOpen(settings.isShopOpen !== false);
+    } catch (e) {
+        console.error("Failed to load initial data", e);
+    }
+  };
+
+  const handleRefresh = async () => {
+      setIsRefreshing(true);
+      try {
+          await loadData(); // Reload Menu & Settings
+          const latestOrders = await db.getOrders(); // Force fetch orders
+          setOrders([...latestOrders].sort((a, b) => b.createdAt - a.createdAt));
+      } catch (e) {
+          console.error("Refresh failed", e);
+          setToast({ msg: "Failed to refresh data", type: 'CANCEL' }); // Reusing CANCEL style for error
+          setTimeout(() => setToast(null), 3000);
+      } finally {
+          // Min 500ms delay for visual feedback
+          setTimeout(() => setIsRefreshing(false), 500);
+      }
   };
 
   const toggleShopStatus = async () => {
@@ -185,13 +211,11 @@ export const VendorApp: React.FC = () => {
   };
 
   const handleUpdateMenuItem = async (item: MenuItem, updates: Partial<MenuItem>) => {
-    // Optimistic UI Update
     setMenu(prev => prev.map(m => m.id === item.id ? { ...m, ...updates } : m));
     try {
       await db.updateMenuItem(item.id, updates);
     } catch (e) {
       console.error("Failed to update item", e);
-      // Revert
       setMenu(prev => prev.map(m => m.id === item.id ? item : m));
       alert("Failed to update menu item.");
     }
@@ -233,18 +257,18 @@ export const VendorApp: React.FC = () => {
   };
 
   const filteredOrders = useMemo(() => {
-    if (activeTab === 'HISTORY') {
+    // HISTORY is now handled in the sub-component logic or explicitly when filtering
+    if (subTab === 'HISTORY') {
       return orders.filter(o => o.status === OrderStatus.DELIVERED || o.status === OrderStatus.CANCELLED);
     }
-    if (activeTab === 'MENU' || activeTab === 'SECURITY') return [];
+    if (activeTab === 'MORE') return [];
     return orders.filter(o => o.status === activeTab);
-  }, [orders, activeTab]);
+  }, [orders, activeTab, subTab]);
 
   const counts = useMemo(() => ({
     NEW: orders.filter(o => o.status === OrderStatus.NEW).length,
     COOKING: orders.filter(o => o.status === OrderStatus.COOKING).length,
     READY: orders.filter(o => o.status === OrderStatus.READY).length,
-    HISTORY: orders.filter(o => o.status === OrderStatus.DELIVERED).length
   }), [orders]);
 
   const revenue = useMemo(() => 
@@ -255,6 +279,16 @@ export const VendorApp: React.FC = () => {
     ['All', ...Array.from(new Set(menu.map(m => m.category))).sort()], 
   [menu]);
 
+  // --- NAV HANDLERS ---
+  const handleMainTabChange = (tab: string) => {
+      setActiveTab(tab);
+      setSubTab(null); // Reset sub-tab when switching main tabs
+  };
+
+  const handleMoreNavigate = (feature: string) => {
+      setSubTab(feature);
+  };
+
 
   if (!isAuthenticated) {
     return (
@@ -264,7 +298,7 @@ export const VendorApp: React.FC = () => {
             <Lock className="text-white" size={32} />
           </div>
           <h1 className="text-2xl font-black text-white mb-2">Vendor Portal</h1>
-          <p className="text-slate-500 mb-8 text-sm font-mono">System v4.0 (Operations)</p>
+          <p className="text-slate-500 mb-8 text-sm font-mono">System v4.5</p>
           
           <form onSubmit={handleLogin} className="space-y-4">
             <input 
@@ -272,7 +306,7 @@ export const VendorApp: React.FC = () => {
               value={pin}
               onChange={e => setPin(e.target.value)}
               placeholder="Enter PIN (1234)"
-              className="w-full bg-slate-950 border border-slate-800 text-white text-center text-2xl font-bold tracking-widest py-4 rounded-xl focus:border-orange-500 focus:ring-0 outline-none transition-all placeholder:text-slate-800 placeholder:text-base placeholder:tracking-normal placeholder:font-normal"
+              className="w-full bg-slate-950 border border-slate-800 text-white text-center text-2xl font-bold tracking-widest py-4 rounded-xl focus:border-orange-500 focus:ring-0 outline-none transition-all"
               autoFocus
               inputMode="numeric"
             />
@@ -303,7 +337,7 @@ export const VendorApp: React.FC = () => {
           <ManualOrderModal menu={menu} onClose={() => setShowManualOrderModal(false)} onOrder={handleManualOrder} />
       )}
 
-      {/* HEADER */}
+      {/* CLEAN HEADER */}
       <header className="bg-slate-900 dark:bg-slate-900 text-white sticky top-0 z-30 shadow-md">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -313,117 +347,161 @@ export const VendorApp: React.FC = () => {
             <div>
               <h1 className="font-bold leading-none">CampusBytes</h1>
               <div className="flex items-center gap-2 mt-0.5">
-                <span className="text-[10px] font-mono text-slate-400">VENDOR</span>
-                <span className="text-[9px] bg-green-900 text-green-400 px-1.5 rounded border border-green-800">v4.0</span>
+                <span className={`w-2 h-2 rounded-full ${isShopOpen ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
+                <span className="text-[10px] font-mono text-slate-400">{isShopOpen ? 'ONLINE' : 'CLOSED'}</span>
               </div>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-             <button
-               onClick={toggleShopStatus}
-               className={`p-2 rounded-full border transition-colors ${isShopOpen ? 'bg-green-500/20 text-green-500 border-green-500/50' : 'bg-red-500/20 text-red-500 border-red-500/50'}`}
-               title={isShopOpen ? "Shop Open" : "Shop Closed"}
-             >
-                 <Power size={18} />
-             </button>
              <button 
-               onClick={() => setDarkMode(!darkMode)}
-               className="p-2 bg-slate-800 hover:bg-slate-700 rounded-full text-slate-400 hover:text-yellow-400 transition-colors border border-slate-700"
-               title="Toggle Theme"
+               onClick={handleRefresh}
+               disabled={isRefreshing}
+               className="p-2 bg-slate-800 hover:bg-slate-700 rounded-full text-slate-400 transition-colors disabled:opacity-50"
              >
-                {darkMode ? <Sun size={18} /> : <Moon size={18} />}
-             </button>
-             <button 
-                onClick={() => setShowStats(true)}
-                className="flex items-center gap-2 bg-slate-800 hover:bg-slate-700 px-3 py-1.5 rounded-lg border border-slate-700 transition-colors group"
-             >
-                <BarChart3 size={14} className="text-orange-400 group-hover:scale-110 transition-transform" /> 
-                <span className="font-mono font-bold text-sm text-white hidden sm:inline">Stats</span>
-             </button>
-             <button 
-               onClick={() => window.location.reload()}
-               className="p-2 bg-slate-800 hover:bg-slate-700 rounded-full text-slate-400 transition-colors"
-             >
-                <RefreshCw size={18} />
+                <RefreshCw size={18} className={isRefreshing ? 'animate-spin text-orange-500' : ''} />
              </button>
           </div>
         </div>
 
-        {/* DESKTOP NAV */}
+        {/* DESKTOP NAV (Only visible on large screens) */}
         <div className="hidden sm:flex bg-slate-950 justify-center border-t border-slate-800">
-           {['NEW', 'COOKING', 'READY', 'HISTORY', 'MENU', 'SECURITY'].map(tab => (
+           {['NEW', 'COOKING', 'READY', 'MORE'].map(tab => (
              <DesktopTab 
                key={tab} 
                id={tab} 
                active={activeTab} 
-               onClick={setActiveTab} 
+               onClick={handleMainTabChange} 
                count={counts[tab as keyof typeof counts] || 0} 
              />
            ))}
         </div>
       </header>
 
+      {/* MAIN CONTENT AREA */}
       <main className="flex-1 max-w-5xl mx-auto w-full p-4">
-        {activeTab === 'SECURITY' ? (
-            <SecurityPanel requestConfirm={requestConfirm} />
-        ) : activeTab === 'MENU' ? (
-            <MenuList 
-                menu={menu}
-                onToggleStatus={handleUpdateMenuItem}
-                onDeleteItem={handleDeleteItem}
-                onAddClick={() => setShowAddMenuModal(true)}
-            />
-        ) : (
-          <div className="space-y-4">
-            {activeTab === 'NEW' && (
+        
+        {/* 1. NEW ORDERS TAB */}
+        {activeTab === 'NEW' && (
+            <div className="space-y-4 animate-in slide-in-from-right-4 duration-300">
                 <button 
                     onClick={() => setShowManualOrderModal(true)}
                     className="w-full bg-slate-800 dark:bg-slate-800 text-white font-bold py-4 rounded-2xl flex items-center justify-center gap-2 shadow-md active:scale-[0.99] transition-transform hover:bg-slate-700 border border-slate-700"
                 >
-                    <ClipboardList size={20} /> Take Manual Order (Walk-in)
+                    <ClipboardList size={20} /> Take Manual Order
                 </button>
-            )}
+                <OrderGrid orders={filteredOrders} />
+            </div>
+        )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredOrders.length === 0 ? (
-                <div className="col-span-full text-center py-20 text-slate-400">
-                    <div className="w-16 h-16 bg-slate-200 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <Clock size={30} />
-                    </div>
-                    <p className="font-medium">No orders in this stage.</p>
-                </div>
-                ) : (
-                    filteredOrders.map(order => (
-                        <OrderCard 
-                            key={order.id}
-                            order={order}
-                            currentTime={currentTime}
-                            updateStatus={updateStatus}
-                            updatePayment={updatePayment}
-                            completeOrder={completeOrder}
-                            requestConfirm={requestConfirm}
+        {/* 2. KITCHEN / READY TABS */}
+        {(activeTab === 'COOKING' || activeTab === 'READY') && (
+            <div className="animate-in slide-in-from-right-4 duration-300">
+                <OrderGrid orders={filteredOrders} />
+            </div>
+        )}
+
+        {/* 3. MORE TAB (The Hub) */}
+        {activeTab === 'MORE' && (
+            <div className="animate-in slide-in-from-right-4 duration-300">
+                {subTab === null && (
+                    <MoreMenu 
+                        onNavigate={handleMoreNavigate}
+                        onToggleShop={toggleShopStatus}
+                        isShopOpen={isShopOpen}
+                        onToggleTheme={() => setDarkMode(!darkMode)}
+                        isDarkMode={darkMode}
+                        onShowStats={() => setShowStats(true)}
+                    />
+                )}
+
+                {/* SUB-VIEWS INSIDE 'MORE' */}
+                {subTab === 'HISTORY' && (
+                    <SubViewWrapper title="Order History" onBack={() => setSubTab(null)}>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {filteredOrders.map(order => (
+                                <OrderCard 
+                                    key={order.id} order={order} currentTime={currentTime}
+                                    updateStatus={updateStatus} updatePayment={updatePayment}
+                                    completeOrder={completeOrder} requestConfirm={requestConfirm}
+                                />
+                            ))}
+                        </div>
+                    </SubViewWrapper>
+                )}
+
+                {subTab === 'MENU' && (
+                    <SubViewWrapper title="Menu Control" onBack={() => setSubTab(null)}>
+                        <MenuList 
+                            menu={menu}
+                            onToggleStatus={handleUpdateMenuItem}
+                            onDeleteItem={handleDeleteItem}
+                            onAddClick={() => setShowAddMenuModal(true)}
                         />
-                    ))
+                    </SubViewWrapper>
+                )}
+
+                {subTab === 'SECURITY' && (
+                    <SubViewWrapper title="Security Center" onBack={() => setSubTab(null)}>
+                        <SecurityPanel requestConfirm={requestConfirm} />
+                    </SubViewWrapper>
                 )}
             </div>
-          </div>
         )}
+
       </main>
 
+      {/* MOBILE NAV (Fixed Bottom) */}
       <nav className="sm:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 z-50 pb-safe shadow-[0_-10px_30px_rgba(0,0,0,0.05)] transition-colors">
-        <div className="grid grid-cols-6 h-16">
-           <MobileTab id="NEW" icon={BellRing} label="Pending" active={activeTab} onClick={setActiveTab} count={counts.NEW} />
-           <MobileTab id="COOKING" icon={ChefHat} label="Kitchen" active={activeTab} onClick={setActiveTab} count={counts.COOKING} />
-           <MobileTab id="READY" icon={Utensils} label="Serve" active={activeTab} onClick={setActiveTab} count={counts.READY} />
-           <MobileTab id="HISTORY" icon={Clock} label="History" active={activeTab} onClick={setActiveTab} count={0} />
-           <MobileTab id="MENU" icon={MenuIcon} label="Menu" active={activeTab} onClick={setActiveTab} count={0} />
-           <MobileTab id="SECURITY" icon={ShieldAlert} label="Security" active={activeTab} onClick={setActiveTab} count={0} />
+        <div className="grid grid-cols-4 h-16">
+           <MobileTab id="NEW" icon={BellRing} label="Pending" active={activeTab} onClick={handleMainTabChange} count={counts.NEW} />
+           <MobileTab id="COOKING" icon={ChefHat} label="Kitchen" active={activeTab} onClick={handleMainTabChange} count={counts.COOKING} />
+           <MobileTab id="READY" icon={Utensils} label="Serve" active={activeTab} onClick={handleMainTabChange} count={counts.READY} />
+           <MobileTab id="MORE" icon={Grid} label="More" active={activeTab} onClick={handleMainTabChange} count={0} />
         </div>
       </nav>
 
     </div>
   );
+
+  // --- Internal Helper Components ---
+  function OrderGrid({ orders }: { orders: Order[] }) {
+      if (orders.length === 0) {
+          return (
+            <div className="col-span-full text-center py-20 text-slate-400">
+                <div className="w-16 h-16 bg-slate-200 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <Clock size={30} />
+                </div>
+                <p className="font-medium">No orders in this stage.</p>
+            </div>
+          );
+      }
+      return (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {orders.map(order => (
+                <OrderCard 
+                    key={order.id} order={order} currentTime={currentTime}
+                    updateStatus={updateStatus} updatePayment={updatePayment}
+                    completeOrder={completeOrder} requestConfirm={requestConfirm}
+                />
+            ))}
+        </div>
+      );
+  }
+
+  function SubViewWrapper({ title, onBack, children }: any) {
+      return (
+          <div className="space-y-4">
+              <div className="flex items-center gap-3 mb-4">
+                  <button onClick={onBack} className="p-2 bg-white dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm">
+                      <Grid size={20} className="dark:text-white" />
+                  </button>
+                  <h2 className="text-xl font-bold text-slate-800 dark:text-white">{title}</h2>
+              </div>
+              {children}
+          </div>
+      )
+  }
 };
 
 const DesktopTab = ({ id, active, onClick, count }: { id: string, active: string, onClick: (id: string) => void, count: number }) => (
@@ -431,7 +509,7 @@ const DesktopTab = ({ id, active, onClick, count }: { id: string, active: string
      onClick={() => onClick(id)}
      className={`relative px-8 py-4 font-bold text-sm tracking-wide transition-all border-b-4 ${active === id ? 'border-orange-500 text-white bg-slate-900' : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-900/50'}`}
    >
-     {id}
+     {id === 'NEW' ? 'PENDING' : id}
      {count > 0 && (
        <span className={`ml-2 px-1.5 py-0.5 text-[10px] rounded-full ${active === id ? 'bg-orange-500 text-white' : 'bg-slate-800 text-slate-400'}`}>
          {count}
