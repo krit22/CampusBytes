@@ -189,6 +189,24 @@ async function handleSuccessfulOrder(customerId) {
 
 // --- ROUTES ---
 
+// Vendor Login Endpoint
+app.post('/api/vendor/login', (req, res) => {
+  const { password } = req.body;
+  const securePassword = process.env.VENDOR_PASSWORD;
+  
+  if (!securePassword) {
+    console.error("VENDOR_PASSWORD not set in environment variables.");
+    // Fail securely if env var is missing
+    return res.status(500).json({ error: "Server Login Configuration Error" });
+  }
+
+  if (password === securePassword) {
+    res.json({ success: true });
+  } else {
+    res.status(401).json({ error: "Invalid Password" });
+  }
+});
+
 // Get Menu (Auto-seed / Update)
 app.get('/api/menu', async (req, res) => {
   try {

@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { db } from '../services/storage';
 import { Order, OrderStatus, PaymentStatus, MenuItem } from '../types';
@@ -23,7 +22,8 @@ import { useAudio } from '../hooks/useAudio';
 export const VendorApp: React.FC = () => {
   // --- STATE ---
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [pin, setPin] = useState('');
+  const [password, setPassword] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
   const [menu, setMenu] = useState<MenuItem[]>([]);
   const [showStats, setShowStats] = useState(false);
@@ -64,14 +64,24 @@ export const VendorApp: React.FC = () => {
   const { playSound } = useAudio();
 
   // --- AUTH & INIT ---
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (pin === '1234') {
-      setIsAuthenticated(true);
-      loadData();
-    } else {
-      alert('Invalid PIN (Try 1234)');
-      setPin('');
+    setIsLoggingIn(true);
+    
+    try {
+      const success = await db.vendorLogin(password);
+      if (success) {
+        setIsAuthenticated(true);
+        loadData();
+      } else {
+        alert('Invalid Password');
+        setPassword('');
+      }
+    } catch (e) {
+      console.error("Login failed", e);
+      alert("Connection Error");
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
@@ -298,20 +308,23 @@ export const VendorApp: React.FC = () => {
             <Lock className="text-white" size={32} />
           </div>
           <h1 className="text-2xl font-black text-white mb-2">Vendor Portal</h1>
-          <p className="text-slate-500 mb-8 text-sm font-mono">System v4.5</p>
+          <p className="text-slate-500 mb-8 text-sm font-mono">System v4.5 (Secure)</p>
           
           <form onSubmit={handleLogin} className="space-y-4">
             <input 
               type="password" 
-              value={pin}
-              onChange={e => setPin(e.target.value)}
-              placeholder="Enter PIN (1234)"
-              className="w-full bg-slate-950 border border-slate-800 text-white text-center text-2xl font-bold tracking-widest py-4 rounded-xl focus:border-orange-500 focus:ring-0 outline-none transition-all"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="Enter Password"
+              className="w-full bg-slate-950 border border-slate-800 text-white text-center text-xl font-bold tracking-widest py-4 rounded-xl focus:border-orange-500 focus:ring-0 outline-none transition-all"
               autoFocus
-              inputMode="numeric"
             />
-            <button type="submit" className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-4 rounded-xl transition-all active:scale-[0.98] shadow-lg shadow-orange-900/20">
-              Access Dashboard
+            <button 
+              type="submit" 
+              disabled={isLoggingIn}
+              className="w-full bg-orange-600 hover:bg-orange-500 text-white font-bold py-4 rounded-xl transition-all active:scale-[0.98] shadow-lg shadow-orange-900/20 disabled:opacity-70"
+            >
+              {isLoggingIn ? 'Verifying...' : 'Access Dashboard'}
             </button>
           </form>
         </div>
