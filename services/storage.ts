@@ -1,4 +1,3 @@
-
 import { MenuItem, Order, OrderStatus, PaymentStatus, User, SpamRecord, SystemSettings } from '../types';
 import { apiDb } from './api';
 
@@ -315,16 +314,16 @@ const mockDb = {
     
     const orders = await mockDb.getOrders();
     
-    // Mock Rate Limit (Relaxed for testing)
+    // Mock Rate Limit (STRICT: 3 Orders)
     const activeCount = orders.filter(o => o.customerId === user.id && ['NEW','COOKING','READY'].includes(o.status)).length;
-    if (activeCount >= 10) {
-        throw new Error("Order Limit Reached. You have too many active orders.");
+    if (activeCount >= 3) {
+        throw new Error("Order Limit Reached. You can only have 3 active orders at a time.");
     }
     
-    // Cooldown (5s)
+    // Cooldown (STRICT: 30s)
     const lastOrder = orders.filter(o => o.customerId === user.id).sort((a, b) => b.createdAt - a.createdAt)[0];
-    if (lastOrder && (Date.now() - lastOrder.createdAt < 5000)) {
-        throw new Error("Please wait a moment before placing another order.");
+    if (lastOrder && (Date.now() - lastOrder.createdAt < 30000)) {
+        throw new Error("Please wait 30 seconds before placing another order.");
     }
 
     const randomNum = Math.floor(Math.random() * 900) + 100;

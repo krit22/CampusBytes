@@ -1,4 +1,3 @@
-
 import 'dotenv/config';
 import express from 'express';
 import mongoose from 'mongoose';
@@ -292,25 +291,25 @@ app.post('/api/orders', async (req, res) => {
 
     // BYPASS FOR VENDOR MANUAL ORDERS
     if (customerId !== 'vendor_manual') {
-        // 1. Check total active orders for this user (Relaxed to 10 for testing)
+        // 1. Check total active orders for this user (STRICT: Max 3)
         const activeOrdersCount = await Order.countDocuments({
             customerId,
             status: { $in: ['NEW', 'COOKING', 'READY'] }
         });
 
-        if (activeOrdersCount >= 10) {
+        if (activeOrdersCount >= 3) {
             return res.status(429).json({ 
-                error: "Order Limit Reached. You have too many active orders." 
+                error: "Order Limit Reached. You can only have 3 active orders at a time." 
             });
         }
 
-        // 2. Cooldown check (Relaxed to 5s for testing)
+        // 2. Cooldown check (STRICT: 30 Seconds)
         const lastOrder = await Order.findOne({ customerId }).sort({ createdAt: -1 });
         if (lastOrder) {
             const timeDiff = Date.now() - lastOrder.createdAt;
-            if (timeDiff < 5000) { // 5 seconds
+            if (timeDiff < 30000) { // 30 seconds
                 return res.status(429).json({ 
-                    error: "Please wait a moment before placing another order." 
+                    error: "Please wait 30 seconds before placing another order." 
                 });
             }
         }
