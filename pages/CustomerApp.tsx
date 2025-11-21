@@ -1,14 +1,18 @@
 
 import React, { useEffect, useState, useRef } from 'react';
-import { ShoppingBag, Utensils, Clock, LogOut, ChevronRight, User as UserIcon, Mail, ArrowRight, Search, Flame, Timer, Lightbulb, Sparkles, RotateCcw, CheckCircle2, AlertCircle, Plus, Lock, ShieldBan } from 'lucide-react';
+import { ShoppingBag, Utensils, Clock, LogOut, ChevronRight, Search, Flame, Lightbulb, Sparkles, Timer, RotateCcw } from 'lucide-react';
 import { MenuItem, CartItem, Order, OrderStatus, User } from '../types';
 import { db, parseJwt } from '../services/storage';
 import { CartSheet } from '../components/CartSheet';
 import { Badge } from '../components/Badge';
 
-// CONFIG
-const GOOGLE_CLIENT_ID = import.meta.env?.VITE_GOOGLE_CLIENT_ID || "";
+// SUB COMPONENTS
+import { ConfirmationModal, ConfirmConfig } from '../components/shared/ConfirmationModal';
+import { ToastNotification, ToastState } from '../components/shared/ToastNotification';
+import { CustomerLogin } from '../components/customer/CustomerLogin';
+import { BannedView } from '../components/customer/BannedView';
 
+// CONFIG
 const TRIVIA_FACTS = [
     "Honey never spoils. You can eat 3000-year-old honey!",
     "Bananas are berries, but strawberries aren't.",
@@ -19,61 +23,6 @@ const TRIVIA_FACTS = [
     "Chocolate was once used as currency.",
     "A single spaghetti noodle is called a spaghetto."
 ];
-
-// --- SUBCOMPONENTS ---
-
-const ConfirmationModal = ({ config, onClose }: { config: any, onClose: () => void }) => {
-    if (!config.isOpen) return null;
-    return (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
-            <div className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl transform scale-100 animate-in zoom-in-95 duration-200 border border-slate-100">
-                <h3 className={`text-xl font-bold mb-2 ${config.type === 'DANGER' ? 'text-red-600' : 'text-slate-900'}`}>
-                    {config.title}
-                </h3>
-                <p className="text-slate-600 mb-6">{config.message}</p>
-                <div className="flex gap-3">
-                    <button
-                        onClick={onClose}
-                        className="flex-1 py-3 rounded-xl font-bold bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        onClick={() => {
-                            config.onConfirm();
-                            onClose();
-                        }}
-                        className={`flex-1 py-3 rounded-xl font-bold text-white shadow-lg ${
-                            config.type === 'DANGER' 
-                            ? 'bg-red-600 hover:bg-red-700 shadow-red-200' 
-                            : 'bg-slate-900 hover:bg-slate-800 shadow-slate-200'
-                        }`}
-                    >
-                        Confirm
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const ToastNotification = ({ toast }: { toast: { msg: string, type: 'SUCCESS' | 'ERROR' | 'INFO' } | null }) => {
-    if (!toast) return null;
-    return (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[160] w-[90%] max-w-sm animate-in slide-in-from-top-5 duration-300">
-            <div className={`p-4 rounded-xl shadow-xl border flex items-center gap-3 ${
-                toast.type === 'SUCCESS' ? 'bg-slate-900 text-white border-slate-800' :
-                toast.type === 'ERROR' ? 'bg-red-600 text-white border-red-500' :
-                'bg-white text-slate-900 border-slate-200'
-            }`}>
-                {toast.type === 'SUCCESS' ? <CheckCircle2 size={20} className="text-green-400" /> :
-                    toast.type === 'ERROR' ? <AlertCircle size={20} className="text-white" /> :
-                    <Sparkles size={20} className="text-blue-500" />}
-                <div className="font-bold text-sm">{toast.msg}</div>
-            </div>
-        </div>
-    );
-};
 
 export const CustomerApp: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -93,26 +42,15 @@ export const CustomerApp: React.FC = () => {
   const [banInfo, setBanInfo] = useState<{reason: string, expiresAt: number} | null>(null);
   
   // Notification Toast State
-  const [toast, setToast] = useState<{msg: string, type: 'SUCCESS' | 'ERROR' | 'INFO'} | null>(null);
+  const [toast, setToast] = useState<ToastState | null>(null);
 
   // Confirm Modal State
-  const [confirmConfig, setConfirmConfig] = useState<{
-      isOpen: boolean;
-      title: string;
-      message: string;
-      onConfirm: () => void;
-      type: 'DANGER' | 'NEUTRAL';
-  }>({ isOpen: false, title: '', message: '', onConfirm: () => {}, type: 'NEUTRAL' });
+  const [confirmConfig, setConfirmConfig] = useState<ConfirmConfig>({ isOpen: false, title: '', message: '', onConfirm: () => {}, type: 'NEUTRAL' });
 
   // Menu UI States
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const categoryRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
-  
-  // Login UI States
-  const [showEmailForm, setShowEmailForm] = useState(false);
-  const [demoName, setDemoName] = useState('');
-  const [demoEmail, setDemoEmail] = useState('');
 
   // Initialize
   useEffect(() => {
@@ -134,29 +72,10 @@ export const CustomerApp: React.FC = () => {
       setDailyFact(TRIVIA_FACTS[Math.floor(Math.random() * TRIVIA_FACTS.length)]);
   }, [view]);
 
-  // Google Auth Initialization
-  useEffect(() => {
-    if (view === 'LOGIN' && GOOGLE_CLIENT_ID && window.google) {
-      try {
-        window.google.accounts.id.initialize({
-          client_id: GOOGLE_CLIENT_ID,
-          callback: handleGoogleCredentialResponse
-        });
-        window.google.accounts.id.renderButton(
-          document.getElementById("googleBtnWrapper"),
-          { theme: "outline", size: "large", width: "100%", text: "continue_with" }
-        );
-      } catch (e) {
-        console.error("Google Auth Init Error:", e);
-      }
-    }
-  }, [view]);
-
   // Subscription for Order Updates
   useEffect(() => {
     if (user && view !== 'BANNED') {
       const unsubscribe = db.subscribeToOrders((allOrders) => {
-        // Filter for this user
         const myOrders = allOrders.filter(o => o.customerId === user.id).sort((a,b) => b.createdAt - a.createdAt);
         setUserOrders(myOrders);
         
@@ -189,7 +108,6 @@ export const CustomerApp: React.FC = () => {
     try {
       const payload = parseJwt(response.credential);
       if (payload) {
-        // Map Google Profile to App User
         const googleUser: Partial<User> = {
           name: payload.name,
           email: payload.email,
@@ -205,15 +123,9 @@ export const CustomerApp: React.FC = () => {
     }
   };
 
-  const handleCustomLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!demoName || !demoEmail) return;
-    
-    const loggedUser = await db.login({
-      name: demoName,
-      email: demoEmail,
-    });
-    finishLogin(loggedUser);
+  const handleGuestLogin = async (name: string, email: string) => {
+      const loggedUser = await db.login({ name, email });
+      finishLogin(loggedUser);
   };
 
   const finishLogin = async (loggedUser: User) => {
@@ -239,7 +151,6 @@ export const CustomerApp: React.FC = () => {
         'Are you sure you want to sign out of CampusBytes?',
         async () => {
             await db.logout();
-            // Manually reset state to avoid browser reload blank page issues
             setUser(null);
             setMenu([]);
             setCart([]);
@@ -251,7 +162,6 @@ export const CustomerApp: React.FC = () => {
   };
 
   const addToCart = (item: MenuItem) => {
-    // Add to cart is purely local, so it's naturally optimistic/instant
     setCart(prev => {
       const existing = prev.find(i => i.id === item.id);
       if (existing) {
@@ -272,15 +182,13 @@ export const CustomerApp: React.FC = () => {
     });
   };
 
-  // --- REORDER LOGIC ---
   const handleReorder = (oldOrder: Order) => {
-    // 1. Map old items to current menu to get LIVE prices and availability
     let itemsAdded = 0;
     let itemsUnavailable = 0;
     const newCartItems: CartItem[] = [];
 
     oldOrder.items.forEach(oldItem => {
-        const currentMenuItem = menu.find(m => m.name === oldItem.name); // Match by name as ID might change on DB reset
+        const currentMenuItem = menu.find(m => m.name === oldItem.name); 
         
         if (currentMenuItem && currentMenuItem.isAvailable) {
             newCartItems.push({
@@ -298,7 +206,6 @@ export const CustomerApp: React.FC = () => {
         return;
     }
 
-    // 2. Update Cart (Append to existing)
     setCart(prev => {
         const combined = [...prev];
         newCartItems.forEach(newItem => {
@@ -312,13 +219,11 @@ export const CustomerApp: React.FC = () => {
         return combined;
     });
 
-    // 3. Feedback & UI
     if (itemsUnavailable > 0) {
         showToast(`${itemsAdded} items added. ${itemsUnavailable} items were sold out.`, "INFO");
     } else {
         showToast("Order added to cart!", "SUCCESS");
     }
-    
     setIsCartOpen(true);
   };
 
@@ -334,8 +239,7 @@ export const CustomerApp: React.FC = () => {
       setIsCartOpen(false);
     } catch (error: any) {
       console.error("Order failed", error);
-      
-      if (error.status === 403) { // BANNED
+      if (error.status === 403) { 
         const data = error.data;
         setBanInfo({ reason: data.banReason, expiresAt: data.banExpiresAt });
         setView('BANNED');
@@ -351,26 +255,21 @@ export const CustomerApp: React.FC = () => {
 
   const handleCancelOrder = async () => {
     if (!focusedOrder) return;
-    
     requestConfirm(
         'Cancel Order?',
         'Are you sure? Cancelling too many orders will lead to an account suspension.',
         async () => {
-            // 1. Snapshot for revert
             const previousOrder = { ...focusedOrder };
             const previousList = [...userOrders];
 
-            // 2. Optimistic Update
             const cancelledOrder = { ...focusedOrder, status: OrderStatus.CANCELLED };
             setFocusedOrder(cancelledOrder);
             setUserOrders(prev => prev.map(o => o.id === focusedOrder.id ? cancelledOrder : o));
 
             try {
-                // 3. API Call
                 await db.updateOrderStatus(focusedOrder.id, OrderStatus.CANCELLED);
                 showToast("Order cancelled.", "INFO");
             } catch (error) {
-                // 4. Revert on failure
                 console.error("Failed to cancel order", error);
                 setFocusedOrder(previousOrder);
                 setUserOrders(previousList);
@@ -400,129 +299,11 @@ export const CustomerApp: React.FC = () => {
   // --- RENDER VIEWS ---
 
   if (view === 'BANNED' && banInfo) {
-      const date = new Date(banInfo.expiresAt);
-      return (
-        <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-white text-center">
-            <div className="w-24 h-24 bg-red-900/30 rounded-full flex items-center justify-center mb-6 border-4 border-red-600 animate-pulse">
-                <ShieldBan size={50} className="text-red-500" />
-            </div>
-            <h1 className="text-3xl font-black mb-2 tracking-tight">Account Suspended</h1>
-            <p className="text-slate-400 mb-8">Suspicious activity detected.</p>
-            
-            <div className="bg-slate-900 rounded-2xl p-6 w-full max-w-sm border border-slate-800 space-y-4">
-                <div>
-                    <div className="text-xs font-bold text-slate-500 uppercase">Reason</div>
-                    <div className="font-medium text-red-400">{banInfo.reason}</div>
-                </div>
-                <div>
-                    <div className="text-xs font-bold text-slate-500 uppercase">Ban Expires</div>
-                    <div className="font-mono text-lg">{date.toLocaleDateString()} {date.toLocaleTimeString()}</div>
-                </div>
-            </div>
-            
-            <button 
-                onClick={() => window.location.reload()}
-                className="mt-8 px-6 py-3 bg-white text-slate-900 font-bold rounded-full hover:bg-slate-200"
-            >
-                Refresh Status
-            </button>
-        </div>
-      );
+      return <BannedView reason={banInfo.reason} expiresAt={banInfo.expiresAt} />;
   }
 
   if (view === 'LOGIN') {
-    return (
-      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
-        <div className="w-full max-w-sm bg-white p-8 rounded-3xl shadow-xl text-center space-y-8 transition-all border border-slate-100">
-          {!showEmailForm ? (
-            <>
-              <div className="w-20 h-20 bg-orange-100 rounded-3xl flex items-center justify-center mx-auto text-orange-600 shadow-sm">
-                <Utensils size={40} />
-              </div>
-              <div className="space-y-2">
-                <h1 className="text-3xl font-black text-slate-900 tracking-tight">CampusBytes</h1>
-                <p className="text-slate-500 font-medium">Order smarter. Eat better.</p>
-              </div>
-              
-              <div className="space-y-4 pt-2">
-                {GOOGLE_CLIENT_ID ? (
-                   <div id="googleBtnWrapper" className="h-[44px] w-full flex justify-center"></div>
-                ) : (
-                   <div className="text-sm text-red-500 bg-red-50 p-4 rounded-xl border border-red-100">
-                      Config Error: Google Client ID missing.
-                   </div>
-                )}
-
-                <div className="relative py-2">
-                  <div className="absolute inset-0 flex items-center">
-                    <span className="w-full border-t border-slate-200" />
-                  </div>
-                  <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-white px-2 text-slate-400">Or</span>
-                  </div>
-                </div>
-
-                <button 
-                  onClick={() => setShowEmailForm(true)}
-                  className="w-full bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold py-3 rounded-xl border border-slate-200 text-sm transition-colors"
-                >
-                  Continue with Email
-                </button>
-              </div>
-              <p className="text-[10px] text-slate-400 px-4 leading-tight">
-                By continuing, you agree to our Terms of Service and Privacy Policy.
-              </p>
-            </>
-          ) : (
-            <form onSubmit={handleCustomLogin} className="text-left space-y-4 animate-in slide-in-from-right-10 fade-in duration-300">
-              <div className="flex items-center gap-2 mb-6">
-                <button type="button" onClick={() => setShowEmailForm(false)} className="p-1 hover:bg-slate-100 rounded-full">
-                    <ChevronRight className="rotate-180" size={20} />
-                </button>
-                <h2 className="font-bold text-lg">Guest Details</h2>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Full Name</label>
-                <div className="relative">
-                  <UserIcon size={18} className="absolute left-3 top-3 text-slate-400" />
-                  <input 
-                    type="text" 
-                    required
-                    value={demoName}
-                    onChange={e => setDemoName(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:border-orange-500 focus:ring-0 outline-none bg-slate-50"
-                    placeholder="e.g. John Doe"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Email Address</label>
-                <div className="relative">
-                  <Mail size={18} className="absolute left-3 top-3 text-slate-400" />
-                  <input 
-                    type="email" 
-                    required
-                    value={demoEmail}
-                    onChange={e => setDemoEmail(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:border-orange-500 focus:ring-0 outline-none bg-slate-50"
-                    placeholder="e.g. john@campus.edu"
-                  />
-                </div>
-              </div>
-
-              <button 
-                type="submit"
-                className="w-full bg-slate-900 text-white font-bold py-3 rounded-xl hover:bg-slate-800 flex items-center justify-center gap-2 mt-4 shadow-lg shadow-slate-200"
-              >
-                Start Ordering <ArrowRight size={16} />
-              </button>
-            </form>
-          )}
-        </div>
-      </div>
-    );
+    return <CustomerLogin onGoogleLogin={handleGoogleCredentialResponse} onGuestLogin={handleGuestLogin} />;
   }
 
   if (view === 'ORDER_DETAILS' && focusedOrder) {
@@ -559,11 +340,9 @@ export const CustomerApp: React.FC = () => {
 
      return (
         <div className="min-h-screen bg-slate-50 flex flex-col">
-             {/* GLOBAL COMPONENTS */}
              <ConfirmationModal config={confirmConfig} onClose={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} />
              <ToastNotification toast={toast} />
 
-             {/* Nav Back */}
              <div className={`${headerBg} p-4 text-white flex items-center gap-2 transition-colors duration-500`}>
                  <button onClick={() => setView('MENU')} className="p-2 bg-white/20 rounded-full hover:bg-white/30 transition-colors">
                     <ChevronRight size={20} className="rotate-180" />
@@ -602,7 +381,6 @@ export const CustomerApp: React.FC = () => {
                               </div>
                           </div>
 
-                          {/* FOOD TRIVIA - ENGAGEMENT */}
                           {!isCancelled && !isDelivered && (
                               <div className="bg-orange-50 p-4 rounded-xl border border-orange-100 flex items-start gap-3 text-left">
                                   <Lightbulb className="shrink-0 text-orange-500 mt-1" size={18} />
@@ -634,7 +412,6 @@ export const CustomerApp: React.FC = () => {
                               </div>
                           </div>
 
-                          {/* ACTIONS */}
                           <div className="pt-4 space-y-3">
                               <button 
                                   onClick={() => setView('MENU')}
@@ -683,7 +460,6 @@ export const CustomerApp: React.FC = () => {
                 <span className="text-sm font-bold">₹{order.totalAmount}</span>
                 
                 <div className="flex items-center gap-2">
-                    {/* Reorder Button */}
                     <button 
                         onClick={(e) => { e.stopPropagation(); handleReorder(order); }}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-orange-200 text-orange-600 bg-orange-50 hover:bg-orange-100 font-bold text-xs transition-colors"
@@ -701,7 +477,6 @@ export const CustomerApp: React.FC = () => {
 
       return (
           <div className="min-h-screen bg-slate-50">
-              {/* GLOBAL COMPONENTS */}
               <ConfirmationModal config={confirmConfig} onClose={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} />
               <ToastNotification toast={toast} />
 
@@ -722,7 +497,6 @@ export const CustomerApp: React.FC = () => {
                       </div>
                   ) : (
                       <>
-                          {/* Active Orders Section */}
                           {activeHistoryOrders.length > 0 && (
                               <div>
                                   <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
@@ -735,7 +509,6 @@ export const CustomerApp: React.FC = () => {
                               </div>
                           )}
 
-                          {/* Past Orders Section */}
                           {pastHistoryOrders.length > 0 && (
                               <div>
                                   <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-3">Past Orders</h3>
@@ -748,7 +521,6 @@ export const CustomerApp: React.FC = () => {
                   )}
               </div>
 
-              {/* Cart Sheet must be rendered here so Reorder works! */}
               <CartSheet 
                 isOpen={isCartOpen}
                 onClose={() => setIsCartOpen(false)}
@@ -773,7 +545,6 @@ export const CustomerApp: React.FC = () => {
       return m.isAvailable && matchesSearch && (searchQuery ? true : matchesCategory);
   });
 
-  // If searching, group by category of filtered items. If not searching, categories are handled by scroll
   const displayCategories: string[] = searchQuery 
     ? Array.from(new Set(filteredMenu.map(m => m.category))) 
     : categories;
@@ -781,15 +552,10 @@ export const CustomerApp: React.FC = () => {
   return (
     <div className="min-h-screen pb-24 max-w-md mx-auto bg-slate-50 border-x border-slate-100 shadow-2xl relative">
       
-      {/* CONFIRMATION MODAL */}
       <ConfirmationModal config={confirmConfig} onClose={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} />
-
-      {/* CUSTOMER TOAST (Menu view) */}
       <ToastNotification toast={toast} />
 
-      {/* Header */}
       <header className="bg-white sticky top-0 z-20 shadow-sm">
-          {/* Top Bar */}
           <div className="px-5 py-3 border-b border-slate-100 flex justify-between items-center">
             <div className="flex items-center gap-2">
                 <div className="bg-orange-100 p-2 rounded-lg text-orange-600">
@@ -822,7 +588,6 @@ export const CustomerApp: React.FC = () => {
             </div>
         </div>
 
-        {/* Search Bar */}
         <div className="px-5 py-2 bg-white">
             <div className="relative">
                 <Search size={18} className="absolute left-3 top-3 text-slate-400" />
@@ -836,7 +601,6 @@ export const CustomerApp: React.FC = () => {
             </div>
         </div>
 
-        {/* Category Tabs (Sticky) - Only show if not searching */}
         {!searchQuery && (
             <div className="flex gap-2 overflow-x-auto px-5 py-2 pb-3 scrollbar-hide bg-white border-b border-slate-100">
                 {categories.map(cat => (
@@ -852,14 +616,12 @@ export const CustomerApp: React.FC = () => {
         )}
       </header>
 
-      {/* Menu Content */}
       <main className="p-5 space-y-6">
         
         {isLoading ? (
              <div className="flex justify-center py-20 text-slate-400 animate-pulse">Loading menu...</div>
         ) : (
             <>
-                {/* Bestsellers Section - Only when not searching */}
                 {!searchQuery && bestsellers.length > 0 && (
                     <div className="mb-6">
                         <h2 className="flex items-center gap-2 text-lg font-bold text-slate-800 mb-4">
@@ -884,16 +646,13 @@ export const CustomerApp: React.FC = () => {
                     </div>
                 )}
 
-                {/* Menu List */}
                 {searchQuery && filteredMenu.length === 0 && (
                     <div className="text-center py-10 text-slate-400">
                         <p>No items found matching "{searchQuery}"</p>
                     </div>
                 )}
 
-                {/* Categories Loop */}
                 {displayCategories.map(cat => {
-                    // If searching, use filtered list, else use full list
                     const items = searchQuery 
                         ? filteredMenu.filter(m => m.category === cat)
                         : menu.filter(m => m.category === cat && m.isAvailable);
@@ -927,7 +686,6 @@ export const CustomerApp: React.FC = () => {
         )}
       </main>
 
-      {/* Floating Cart Button */}
       {cartCount > 0 && (
           <div className="fixed bottom-6 left-0 right-0 px-6 max-w-md mx-auto z-20 animate-in slide-in-from-bottom-4 duration-300">
               <button 
