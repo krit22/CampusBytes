@@ -218,7 +218,8 @@ const mockDb = {
     return data ? JSON.parse(data) : [];
   },
   
-  updateMenuItemStatus: async (itemId: string, updates: Partial<MenuItem>): Promise<void> => {
+  // Generic Update
+  updateMenuItem: async (itemId: string, updates: Partial<MenuItem>): Promise<void> => {
     await delay(200);
     const menu = await mockDb.getMenu();
     const index = menu.findIndex(m => m.id === itemId);

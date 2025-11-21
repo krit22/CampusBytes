@@ -46,11 +46,12 @@ export const apiDb = {
     return res.json();
   },
   
-  updateMenuItemStatus: async (itemId: string, isAvailable: boolean): Promise<void> => {
+  // Refactored to Generic Update
+  updateMenuItem: async (itemId: string, updates: Partial<MenuItem>): Promise<void> => {
     await fetch(`${API_URL}/api/menu/${itemId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isAvailable })
+      body: JSON.stringify(updates)
     });
   },
 
@@ -193,6 +194,14 @@ export const apiDb = {
     });
   },
 
+  toggleShopStatus: async (isOpen: boolean): Promise<void> => {
+    await fetch(`${API_URL}/api/admin/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isShopOpen: isOpen })
+    });
+  },
+
   getBannedUsers: async (): Promise<SpamRecord[]> => {
     try {
         const res = await fetch(`${API_URL}/api/admin/banned-users`);
@@ -216,4 +225,3 @@ export const apiDb = {
     });
   }
 };
-    

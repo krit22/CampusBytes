@@ -3,7 +3,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { db } from '../services/storage';
 import { Order, OrderStatus, PaymentStatus, MenuItem, CartItem } from '../types';
 import { 
-  RefreshCw, Lock, Clock, BellRing, ChefHat, Search, Menu as MenuIcon, BarChart3, Plus, Trash2, ClipboardList, Moon, Sun, ShieldAlert, Utensils
+  RefreshCw, Lock, Clock, BellRing, ChefHat, Search, Menu as MenuIcon, BarChart3, Plus, Trash2, ClipboardList, Moon, Sun, ShieldAlert, Utensils, Power
 } from 'lucide-react';
 
 // COMPONENTS
@@ -14,6 +14,7 @@ import { ManualOrderModal } from '../components/vendor/ManualOrderModal';
 import { AddMenuItemModal } from '../components/vendor/AddMenuItemModal';
 import { StatsDashboard } from '../components/vendor/StatsDashboard';
 import { OrderCard } from '../components/vendor/OrderCard';
+import { MenuList } from '../components/vendor/MenuList';
 
 // HOOKS
 import { useAudio } from '../hooks/useAudio';
@@ -28,6 +29,7 @@ export const VendorApp: React.FC = () => {
   const [showAddMenuModal, setShowAddMenuModal] = useState(false);
   const [showManualOrderModal, setShowManualOrderModal] = useState(false);
   const [currentTime, setCurrentTime] = useState(Date.now());
+  const [isShopOpen, setIsShopOpen] = useState(true);
   
   // Confirmation Modal State
   const [confirmConfig, setConfirmConfig] = useState<ConfirmConfig>({ 
@@ -52,9 +54,7 @@ export const VendorApp: React.FC = () => {
   const [toast, setToast] = useState<ToastState | null>(null);
   const prevOrderStatusMap = useRef<Map<string, OrderStatus>>(new Map());
   const [activeTab, setActiveTab] = useState<string>('NEW');
-  const [menuSearch, setMenuSearch] = useState('');
-  const [menuCatFilter, setMenuCatFilter] = useState('All');
-  const categoryRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
+
   const { playSound } = useAudio();
 
   // --- AUTH & INIT ---
@@ -70,8 +70,23 @@ export const VendorApp: React.FC = () => {
   };
 
   const loadData = async () => {
-    const items = await db.getMenu();
+    const [items, settings] = await Promise.all([
+        db.getMenu(),
+        db.getSystemSettings()
+    ]);
     setMenu(items);
+    setIsShopOpen(settings.isShopOpen !== false);
+  };
+
+  const toggleShopStatus = async () => {
+      const newState = !isShopOpen;
+      setIsShopOpen(newState);
+      try {
+          await db.toggleShopStatus(newState);
+      } catch (e) {
+          setIsShopOpen(!newState); // revert
+          alert("Failed to update shop status");
+      }
   };
 
   useEffect(() => {
@@ -169,14 +184,15 @@ export const VendorApp: React.FC = () => {
     }
   };
 
-  const toggleItem = async (item: MenuItem) => {
-    const newStatus = !item.isAvailable;
-    setMenu(prev => prev.map(m => m.id === item.id ? { ...m, isAvailable: newStatus } : m));
+  const handleUpdateMenuItem = async (item: MenuItem, updates: Partial<MenuItem>) => {
+    // Optimistic UI Update
+    setMenu(prev => prev.map(m => m.id === item.id ? { ...m, ...updates } : m));
     try {
-      await db.updateMenuItemStatus(item.id, newStatus);
+      await db.updateMenuItem(item.id, updates);
     } catch (e) {
-      console.error("Failed to toggle item", e);
-      setMenu(prev => prev.map(m => m.id === item.id ? { ...m, isAvailable: !newStatus } : m));
+      console.error("Failed to update item", e);
+      // Revert
+      setMenu(prev => prev.map(m => m.id === item.id ? item : m));
       alert("Failed to update menu item.");
     }
   };
@@ -239,12 +255,6 @@ export const VendorApp: React.FC = () => {
     ['All', ...Array.from(new Set(menu.map(m => m.category))).sort()], 
   [menu]);
 
-  const scrollToCat = (cat: string) => {
-    setMenuCatFilter(cat);
-    if (cat !== 'All' && categoryRefs.current[cat]) {
-        categoryRefs.current[cat]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }
-  };
 
   if (!isAuthenticated) {
     return (
@@ -310,6 +320,13 @@ export const VendorApp: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2">
+             <button
+               onClick={toggleShopStatus}
+               className={`p-2 rounded-full border transition-colors ${isShopOpen ? 'bg-green-500/20 text-green-500 border-green-500/50' : 'bg-red-500/20 text-red-500 border-red-500/50'}`}
+               title={isShopOpen ? "Shop Open" : "Shop Closed"}
+             >
+                 <Power size={18} />
+             </button>
              <button 
                onClick={() => setDarkMode(!darkMode)}
                className="p-2 bg-slate-800 hover:bg-slate-700 rounded-full text-slate-400 hover:text-yellow-400 transition-colors border border-slate-700"
@@ -351,87 +368,12 @@ export const VendorApp: React.FC = () => {
         {activeTab === 'SECURITY' ? (
             <SecurityPanel requestConfirm={requestConfirm} />
         ) : activeTab === 'MENU' ? (
-          <div className="animate-in fade-in duration-300 space-y-4">
-            <div className="bg-white dark:bg-slate-850 p-4 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 sticky top-[70px] sm:top-16 z-20 transition-colors">
-               <div className="relative mb-4">
-                 <Search className="absolute left-3 top-3.5 text-slate-400" size={18} />
-                 <input 
-                   type="text" 
-                   placeholder="Search items..." 
-                   value={menuSearch} 
-                   onChange={e => setMenuSearch(e.target.value)}
-                   className="w-full pl-10 pr-4 py-3 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:bg-white dark:focus:bg-slate-800 outline-none font-medium transition-all text-slate-900 dark:text-white"
-                 />
-               </div>
-               <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-                 {menuCategories.map(cat => (
-                   <button
-                     key={cat}
-                     onClick={() => scrollToCat(cat)}
-                     className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${menuCatFilter === cat ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
-                   >
-                     {cat}
-                   </button>
-                 ))}
-               </div>
-            </div>
-
-            <div className="flex justify-end">
-                <button 
-                    onClick={() => setShowAddMenuModal(true)}
-                    className="bg-slate-900 dark:bg-orange-600 text-white font-bold px-6 py-3 rounded-xl flex items-center gap-2 hover:bg-slate-800 dark:hover:bg-orange-500 transition-colors shadow-lg shadow-slate-200 dark:shadow-none"
-                >
-                    <Plus size={18} /> Add New Item
-                </button>
-            </div>
-
-            <div className="space-y-6">
-               {menuCategories.filter(c => c !== 'All').map(cat => {
-                 const items = menu.filter(m => 
-                   m.category === cat && 
-                   m.name.toLowerCase().includes(menuSearch.toLowerCase()) &&
-                   (menuCatFilter === 'All' || menuCatFilter === cat)
-                 );
-                 
-                 if (items.length === 0) return null;
-
-                 return (
-                   <div key={cat} ref={el => { categoryRefs.current[cat] = el; }}>
-                      <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-2 ml-1">{cat}</h3>
-                      <div className="bg-white dark:bg-slate-850 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden transition-colors">
-                         {items.map(item => (
-                           <div key={item.id} className={`p-4 flex justify-between items-center transition-colors ${!item.isAvailable ? 'bg-slate-50/80 dark:bg-slate-900/50' : ''}`}>
-                              <div className="flex items-center gap-4">
-                                <div className={!item.isAvailable ? 'opacity-50' : ''}>
-                                    <h4 className="font-bold text-slate-800 dark:text-white">{item.name}</h4>
-                                    <p className="text-sm text-slate-500 font-medium">₹{item.price}</p>
-                                </div>
-                              </div>
-                              
-                              <div className="flex items-center gap-4">
-                                  <button 
-                                    onClick={() => toggleItem(item)}
-                                    className={`relative w-14 h-8 rounded-full transition-colors ${item.isAvailable ? 'bg-green-500' : 'bg-slate-300 dark:bg-slate-600'}`}
-                                  >
-                                    <div className={`absolute top-1 left-1 w-6 h-6 bg-white rounded-full shadow transition-transform ${item.isAvailable ? 'translate-x-6' : 'translate-x-0'}`} />
-                                  </button>
-                                  
-                                  <button
-                                    onClick={() => handleDeleteItem(item.id)}
-                                    className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
-                                    title="Delete Item"
-                                  >
-                                      <Trash2 size={18} />
-                                  </button>
-                              </div>
-                           </div>
-                         ))}
-                      </div>
-                   </div>
-                 );
-               })}
-            </div>
-          </div>
+            <MenuList 
+                menu={menu}
+                onToggleStatus={handleUpdateMenuItem}
+                onDeleteItem={handleDeleteItem}
+                onAddClick={() => setShowAddMenuModal(true)}
+            />
         ) : (
           <div className="space-y-4">
             {activeTab === 'NEW' && (
