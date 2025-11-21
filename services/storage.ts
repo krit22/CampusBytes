@@ -147,6 +147,20 @@ const handleMockSpamStrike = (customerId: string, customerName: string) => {
     localStorage.setItem(STORAGE_KEYS.SPAM, JSON.stringify(spamRecords));
 };
 
+const handleMockSuccess = (customerId: string) => {
+    const spamStr = localStorage.getItem(STORAGE_KEYS.SPAM);
+    if (!spamStr) return;
+    
+    let spamRecords: SpamRecord[] = JSON.parse(spamStr);
+    const idx = spamRecords.findIndex(r => r.customerId === customerId);
+    
+    if (idx !== -1) {
+        // RESET STRIKES ON SUCCESSFUL ORDER
+        spamRecords[idx].strikes = 0;
+        localStorage.setItem(STORAGE_KEYS.SPAM, JSON.stringify(spamRecords));
+    }
+};
+
 
 const mockDb = {
   init: () => {
@@ -371,6 +385,8 @@ const mockDb = {
       // Handle Spam Tracking
       if (status === OrderStatus.CANCELLED && order.customerId !== 'vendor_manual') {
           handleMockSpamStrike(order.customerId, order.customerName);
+      } else if (status === OrderStatus.DELIVERED && order.customerId !== 'vendor_manual') {
+          handleMockSuccess(order.customerId);
       }
 
       orders[index].status = status;
@@ -401,7 +417,7 @@ const mockDb = {
   // --- MOCK ADMIN ---
   getSystemSettings: async (): Promise<SystemSettings> => {
     const stored = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-    return stored ? JSON.parse(stored) : { isBanSystemActive: true, isShopOpen: true };
+    return stored ? JSON.parse(stored) : { key: 'GLOBAL_SETTINGS', isBanSystemActive: true, isShopOpen: true };
   },
   toggleBanSystem: async (isActive: boolean): Promise<void> => {
     const settings = await mockDb.getSystemSettings();

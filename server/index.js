@@ -170,11 +170,22 @@ async function handleSpamStrike(customerId, customerName) {
         record.banExpiresAt = Date.now() + (99 * 365 * 24 * 60 * 60 * 1000); // Permanent
         record.banReason = "PERMANENT BAN: Policy violation.";
     }
-    
-    // We keep 'strikes' at 3 for the record, but will reset it when unbanned.
   }
 
   await record.save();
+}
+
+async function handleSuccessfulOrder(customerId) {
+    // If an order is successfully DELIVERED, reset strikes.
+    // This ensures bans only happen for CONSECUTIVE spam.
+    try {
+        await SpamRecord.findOneAndUpdate(
+            { customerId },
+            { strikes: 0 } // Reset current strike count
+        );
+    } catch (e) {
+        console.error("Error resetting strikes", e);
+    }
 }
 
 // --- ROUTES ---
@@ -345,18 +356,25 @@ app.put('/api/orders/:id/status', async (req, res) => {
   try {
     const { status } = req.body;
     
-    // Check if this is a cancellation to track strikes
-    if (status === 'CANCELLED') {
-        const order = await Order.findById(req.params.id);
-        if (order && order.customerId !== 'vendor_manual') {
-            await handleSpamStrike(order.customerId, order.customerName);
+    const order = await Order.findById(req.params.id);
+    if (order) {
+        // Handle Status Logic
+        if (status === 'CANCELLED') {
+            if (order.customerId !== 'vendor_manual') {
+                await handleSpamStrike(order.customerId, order.customerName);
+            }
+        } else if (status === 'DELIVERED') {
+            // Success! Reset strikes for good behavior.
+            if (order.customerId !== 'vendor_manual') {
+                await handleSuccessfulOrder(order.customerId);
+            }
         }
-    }
-    // If Delivered (Completed), maybe we should reward user by resetting strikes?
-    // For now, keeping strict logic: Strikes only reset on Unban.
 
-    await Order.findByIdAndUpdate(req.params.id, { status, updatedAt: Date.now() });
-    res.json({ success: true });
+        await Order.findByIdAndUpdate(req.params.id, { status, updatedAt: Date.now() });
+        res.json({ success: true });
+    } else {
+        res.status(404).json({ error: "Order not found" });
+    }
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
