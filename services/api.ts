@@ -1,4 +1,3 @@
-
 import { MenuItem, Order, OrderStatus, PaymentStatus, User, SpamRecord, SystemSettings } from '../types';
 
 // Get API URL from Environment, default to Render for AI Studio/Dev
@@ -31,6 +30,20 @@ export const apiDb = {
   logout: async () => {
     // 3. CLEAR SESSION
     localStorage.removeItem(USER_STORAGE_KEY);
+  },
+
+  vendorLogin: async (password: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`${API_URL}/api/vendor/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password })
+      });
+      return res.ok;
+    } catch (e) {
+      console.error("Vendor login error", e);
+      return false;
+    }
   },
 
   getCurrentUser: (): User | null => {

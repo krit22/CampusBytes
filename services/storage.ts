@@ -215,6 +215,13 @@ const mockDb = {
     return user;
   },
 
+  vendorLogin: async (password: string): Promise<boolean> => {
+    // For local testing, check env var or default to 'admin'
+    const mockPass = import.meta.env?.VITE_VENDOR_PASSWORD || 'admin';
+    await delay(500);
+    return password === mockPass;
+  },
+
   logout: async (): Promise<void> => {
     await delay(200);
     localStorage.removeItem(STORAGE_KEYS.USER);
