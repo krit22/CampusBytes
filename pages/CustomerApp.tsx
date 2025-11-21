@@ -11,6 +11,7 @@ import { ConfirmationModal, ConfirmConfig } from '../components/shared/Confirmat
 import { ToastNotification, ToastState } from '../components/shared/ToastNotification';
 import { CustomerLogin } from '../components/customer/CustomerLogin';
 import { BannedView } from '../components/customer/BannedView';
+import { OnboardingWalkthrough } from '../components/customer/OnboardingWalkthrough';
 
 // CONFIG
 const TRIVIA_FACTS = [
@@ -37,6 +38,9 @@ export const CustomerApp: React.FC = () => {
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [focusedOrder, setFocusedOrder] = useState<Order | null>(null);
   const [dailyFact, setDailyFact] = useState('');
+  
+  // Onboarding State
+  const [showWalkthrough, setShowWalkthrough] = useState(false);
   
   // Ban State
   const [banInfo, setBanInfo] = useState<{reason: string, expiresAt: number} | null>(null);
@@ -67,6 +71,18 @@ export const CustomerApp: React.FC = () => {
     };
     checkUser();
   }, []);
+
+  // Check for first-time visit on Menu load
+  useEffect(() => {
+      if (view === 'MENU' && !localStorage.getItem('cb_walkthrough_seen')) {
+          setShowWalkthrough(true);
+      }
+  }, [view]);
+
+  const finishWalkthrough = () => {
+      localStorage.setItem('cb_walkthrough_seen', 'true');
+      setShowWalkthrough(false);
+  };
 
   useEffect(() => {
       setDailyFact(TRIVIA_FACTS[Math.floor(Math.random() * TRIVIA_FACTS.length)]);
@@ -552,6 +568,8 @@ export const CustomerApp: React.FC = () => {
   return (
     <div className="min-h-screen pb-24 max-w-md mx-auto bg-slate-50 border-x border-slate-100 shadow-2xl relative">
       
+      {showWalkthrough && <OnboardingWalkthrough onFinish={finishWalkthrough} />}
+
       <ConfirmationModal config={confirmConfig} onClose={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} />
       <ToastNotification toast={toast} />
 
