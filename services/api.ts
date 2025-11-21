@@ -108,6 +108,32 @@ export const apiDb = {
     if (!res.ok) throw new Error('Failed to create order');
     return res.json();
   },
+  
+  createManualOrder: async (customerName: string, items: any[], total: number, paymentStatus: PaymentStatus): Promise<Order> => {
+    // Use 'vendor_manual' as ID to bypass rate limiting on server
+    const res = await fetch(`${API_URL}/api/orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        customerId: 'vendor_manual',
+        customerName: customerName || 'Walk-in Customer',
+        items,
+        totalAmount: total,
+        paymentMethod: 'CASH' // Default to cash for walk-ins mostly
+      })
+    });
+    
+    if (!res.ok) throw new Error('Failed to create manual order');
+    const newOrder = await res.json();
+
+    // If the vendor marks it as PAID immediately
+    if (paymentStatus === PaymentStatus.PAID) {
+       await apiDb.updatePaymentStatus(newOrder.id, PaymentStatus.PAID);
+       newOrder.paymentStatus = PaymentStatus.PAID;
+    }
+
+    return newOrder;
+  },
 
   updateOrderStatus: async (orderId: string, status: OrderStatus): Promise<void> => {
     await fetch(`${API_URL}/api/orders/${orderId}/status`, {

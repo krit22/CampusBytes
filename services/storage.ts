@@ -246,6 +246,32 @@ const mockDb = {
     return newOrder;
   },
 
+  createManualOrder: async (customerName: string, items: any[], total: number, paymentStatus: PaymentStatus): Promise<Order> => {
+    await delay(800);
+    const orders = await mockDb.getOrders();
+    
+    const randomNum = Math.floor(Math.random() * 900) + 100;
+    const token = `R-${randomNum}`; // Keeping 'R' for consistency, but this is manually created
+    
+    const newOrder: Order = {
+      id: Date.now().toString(),
+      token,
+      customerId: 'vendor_manual',
+      customerName: customerName || 'Walk-in Customer',
+      items,
+      totalAmount: total,
+      status: OrderStatus.NEW,
+      paymentStatus: paymentStatus, // Vendor can set this immediately
+      paymentMethod: 'CASH',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    orders.push(newOrder);
+    localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
+    return newOrder;
+  },
+
   updateOrderStatus: async (orderId: string, status: OrderStatus): Promise<void> => {
     await delay(200);
     const orders = await mockDb.getOrders();
