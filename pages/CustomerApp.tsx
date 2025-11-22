@@ -38,6 +38,7 @@ export const CustomerApp: React.FC = () => {
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [focusedOrder, setFocusedOrder] = useState<Order | null>(null);
   const [dailyFact, setDailyFact] = useState('');
+  const [vendorPhone, setVendorPhone] = useState('9876543210');
   
   // Onboarding State
   const [showWalkthrough, setShowWalkthrough] = useState(false);
@@ -152,12 +153,16 @@ export const CustomerApp: React.FC = () => {
   };
 
   const loadData = async (userId: string) => {
-    const [items, orders] = await Promise.all([
+    const [items, orders, settings] = await Promise.all([
       db.getMenu(),
-      db.getUserOrders(userId)
+      db.getUserOrders(userId),
+      db.getSystemSettings()
     ]);
     setMenu(items);
     setUserOrders(orders);
+    if (settings.vendorPhoneNumber) {
+        setVendorPhone(settings.vendorPhoneNumber);
+    }
     setIsLoading(false);
   };
 
@@ -413,7 +418,7 @@ export const CustomerApp: React.FC = () => {
                                       <div className="text-sm text-slate-600">{activeOrder.deliveryDetails.instructions}</div>
                                       
                                       {!isCancelled && !isDelivered && (
-                                         <a href="tel:+919876543210" className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-purple-600 border border-purple-200 bg-white px-3 py-1.5 rounded-lg hover:bg-purple-100">
+                                         <a href={`tel:${vendorPhone}`} className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-purple-600 border border-purple-200 bg-white px-3 py-1.5 rounded-lg hover:bg-purple-100">
                                              <Phone size={12} /> Call Vendor
                                          </a>
                                       )}

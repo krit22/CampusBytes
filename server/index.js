@@ -54,7 +54,8 @@ const SpamRecordSchema = new mongoose.Schema({
 const SystemSettingsSchema = new mongoose.Schema({
   key: { type: String, default: 'GLOBAL_SETTINGS', unique: true },
   isBanSystemActive: { type: Boolean, default: true },
-  isShopOpen: { type: Boolean, default: true }
+  isShopOpen: { type: Boolean, default: true },
+  vendorPhoneNumber: { type: String, default: '9876543210' }
 });
 
 const Menu = mongoose.model('Menu', MenuSchema);
@@ -286,7 +287,7 @@ app.post('/api/orders', async (req, res) => {
     const settings = await getSystemSettings();
 
     if (!settings.isShopOpen && customerId !== 'vendor_manual') {
-        return res.status(503).json({ error: "Shop is currently closed." });
+        return res.status(530).json({ error: "Shop is currently closed." });
     }
 
     if (settings.isBanSystemActive && customerId !== 'vendor_manual') {

@@ -16,9 +16,90 @@ import { StatsDashboard } from '../components/vendor/StatsDashboard';
 import { OrderCard } from '../components/vendor/OrderCard';
 import { MenuList } from '../components/vendor/MenuList';
 import { MoreMenu } from '../components/vendor/MoreMenu';
+import { SettingsPanel } from '../components/vendor/SettingsPanel';
 
 // HOOKS
 import { useAudio } from '../hooks/useAudio';
+
+// --- HELPER COMPONENTS (Moved Outside to prevent re-mounting) ---
+
+interface OrderGridProps {
+  orders: Order[];
+  currentTime: number;
+  updateStatus: (id: string, status: OrderStatus) => void;
+  updatePayment: (id: string, status: PaymentStatus) => void;
+  completeOrder: (order: Order) => void;
+  requestConfirm: (title: string, message: string, action: () => void, type: 'DANGER' | 'NEUTRAL') => void;
+}
+
+const OrderGrid: React.FC<OrderGridProps> = ({ orders, currentTime, updateStatus, updatePayment, completeOrder, requestConfirm }) => {
+    if (orders.length === 0) {
+        return (
+          <div className="col-span-full text-center py-20 text-slate-400">
+              <div className="w-16 h-16 bg-slate-200 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Clock size={30} />
+              </div>
+              <p className="font-medium">No orders in this stage.</p>
+          </div>
+        );
+    }
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {orders.map(order => (
+              <OrderCard 
+                  key={order.id} order={order} currentTime={currentTime}
+                  updateStatus={updateStatus} updatePayment={updatePayment}
+                  completeOrder={completeOrder} requestConfirm={requestConfirm}
+              />
+          ))}
+      </div>
+    );
+};
+
+const SubViewWrapper: React.FC<{ title: string; onBack: () => void; children: React.ReactNode }> = ({ title, onBack, children }) => {
+    return (
+        <div className="space-y-4">
+            <div className="flex items-center gap-3 mb-4">
+                <button onClick={onBack} className="p-2 bg-white dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm">
+                    <Grid size={20} className="dark:text-white" />
+                </button>
+                <h2 className="text-xl font-bold text-slate-800 dark:text-white">{title}</h2>
+            </div>
+            {children}
+        </div>
+    )
+}
+
+const DesktopTab: React.FC<{ id: string, active: string, onClick: (id: string) => void, count: number }> = ({ id, active, onClick, count }) => (
+   <button 
+     onClick={() => onClick(id)}
+     className={`relative px-8 py-4 font-bold text-sm tracking-wide transition-all border-b-4 ${active === id ? 'border-orange-500 text-white bg-slate-900' : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-900/50'}`}
+   >
+     {id === 'NEW' ? 'PENDING' : id}
+     {count > 0 && (
+       <span className={`ml-2 px-1.5 py-0.5 text-[10px] rounded-full ${active === id ? 'bg-orange-500 text-white' : 'bg-slate-800 text-slate-400'}`}>
+         {count}
+       </span>
+     )}
+   </button>
+);
+
+const MobileTab = ({ id, icon: Icon, label, active, onClick, count }: any) => (
+  <button 
+    onClick={() => onClick(id)}
+    className={`flex flex-col items-center justify-center relative transition-colors ${active === id ? 'text-orange-600 dark:text-orange-500' : 'text-slate-400 dark:text-slate-600'}`}
+  >
+    <div className={`p-1 rounded-xl transition-all ${active === id ? 'bg-orange-50 dark:bg-orange-900/20' : ''}`}>
+        <Icon size={active === id ? 22 : 20} strokeWidth={active === id ? 2.5 : 2} />
+    </div>
+    <span className="text-[10px] font-bold mt-0.5">{label}</span>
+    {count > 0 && (
+      <span className="absolute top-1 right-2 min-w-[16px] h-4 bg-red-500 text-white text-[9px] font-bold flex items-center justify-center rounded-full px-1 border border-white dark:border-slate-900">
+        {count}
+      </span>
+    )}
+  </button>
+);
 
 export const VendorApp: React.FC = () => {
   // --- STATE ---
@@ -427,14 +508,28 @@ export const VendorApp: React.FC = () => {
                 >
                     <ClipboardList size={20} /> Take Manual Order
                 </button>
-                <OrderGrid orders={filteredOrders} />
+                <OrderGrid 
+                  orders={filteredOrders}
+                  currentTime={currentTime}
+                  updateStatus={updateStatus}
+                  updatePayment={updatePayment}
+                  completeOrder={completeOrder}
+                  requestConfirm={requestConfirm}
+                />
             </div>
         )}
 
         {/* 2. KITCHEN / READY TABS */}
         {(activeTab === 'COOKING' || activeTab === 'READY') && (
             <div className="animate-in slide-in-from-right-4 duration-300">
-                <OrderGrid orders={filteredOrders} />
+                <OrderGrid 
+                  orders={filteredOrders}
+                  currentTime={currentTime}
+                  updateStatus={updateStatus}
+                  updatePayment={updatePayment}
+                  completeOrder={completeOrder}
+                  requestConfirm={requestConfirm}
+                />
             </div>
         )}
 
@@ -483,6 +578,12 @@ export const VendorApp: React.FC = () => {
                         <SecurityPanel requestConfirm={requestConfirm} />
                     </SubViewWrapper>
                 )}
+
+                {subTab === 'SETTINGS' && (
+                    <SubViewWrapper title="Settings" onBack={() => setSubTab(null)}>
+                        <SettingsPanel onBack={() => setSubTab(null)} />
+                    </SubViewWrapper>
+                )}
             </div>
         )}
 
@@ -500,74 +601,4 @@ export const VendorApp: React.FC = () => {
 
     </div>
   );
-
-  // --- Internal Helper Components ---
-  function OrderGrid({ orders }: { orders: Order[] }) {
-      if (orders.length === 0) {
-          return (
-            <div className="col-span-full text-center py-20 text-slate-400">
-                <div className="w-16 h-16 bg-slate-200 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Clock size={30} />
-                </div>
-                <p className="font-medium">No orders in this stage.</p>
-            </div>
-          );
-      }
-      return (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {orders.map(order => (
-                <OrderCard 
-                    key={order.id} order={order} currentTime={currentTime}
-                    updateStatus={updateStatus} updatePayment={updatePayment}
-                    completeOrder={completeOrder} requestConfirm={requestConfirm}
-                />
-            ))}
-        </div>
-      );
-  }
-
-  function SubViewWrapper({ title, onBack, children }: any) {
-      return (
-          <div className="space-y-4">
-              <div className="flex items-center gap-3 mb-4">
-                  <button onClick={onBack} className="p-2 bg-white dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm">
-                      <Grid size={20} className="dark:text-white" />
-                  </button>
-                  <h2 className="text-xl font-bold text-slate-800 dark:text-white">{title}</h2>
-              </div>
-              {children}
-          </div>
-      )
-  }
 };
-
-const DesktopTab: React.FC<{ id: string, active: string, onClick: (id: string) => void, count: number }> = ({ id, active, onClick, count }) => (
-   <button 
-     onClick={() => onClick(id)}
-     className={`relative px-8 py-4 font-bold text-sm tracking-wide transition-all border-b-4 ${active === id ? 'border-orange-500 text-white bg-slate-900' : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-900/50'}`}
-   >
-     {id === 'NEW' ? 'PENDING' : id}
-     {count > 0 && (
-       <span className={`ml-2 px-1.5 py-0.5 text-[10px] rounded-full ${active === id ? 'bg-orange-500 text-white' : 'bg-slate-800 text-slate-400'}`}>
-         {count}
-       </span>
-     )}
-   </button>
-);
-
-const MobileTab = ({ id, icon: Icon, label, active, onClick, count }: any) => (
-  <button 
-    onClick={() => onClick(id)}
-    className={`flex flex-col items-center justify-center relative transition-colors ${active === id ? 'text-orange-600 dark:text-orange-500' : 'text-slate-400 dark:text-slate-600'}`}
-  >
-    <div className={`p-1 rounded-xl transition-all ${active === id ? 'bg-orange-50 dark:bg-orange-900/20' : ''}`}>
-        <Icon size={active === id ? 22 : 20} strokeWidth={active === id ? 2.5 : 2} />
-    </div>
-    <span className="text-[10px] font-bold mt-0.5">{label}</span>
-    {count > 0 && (
-      <span className="absolute top-1 right-2 min-w-[16px] h-4 bg-red-500 text-white text-[9px] font-bold flex items-center justify-center rounded-full px-1 border border-white dark:border-slate-900">
-        {count}
-      </span>
-    )}
-  </button>
-);

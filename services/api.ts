@@ -196,6 +196,13 @@ export const apiDb = {
       const res = await fetch(`${API_URL}/api/admin/settings`);
       return res.json();
   },
+  updateSystemSettings: async (updates: Partial<SystemSettings>): Promise<void> => {
+      await fetch(`${API_URL}/api/admin/settings`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updates)
+      });
+  },
   toggleBanSystem: async (isActive: boolean): Promise<void> => {
       await fetch(`${API_URL}/api/admin/settings`, {
           method: 'PUT',

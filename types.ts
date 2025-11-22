@@ -79,6 +79,7 @@ export interface SystemSettings {
   key: string;
   isBanSystemActive: boolean;
   isShopOpen?: boolean;
+  vendorPhoneNumber?: string;
 }
 
 // Google Identity Services Types

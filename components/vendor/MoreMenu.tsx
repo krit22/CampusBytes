@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { 
-  Clock, Menu as MenuIcon, ShieldAlert, BarChart3, Power, Moon, Sun, ChevronRight 
+  Clock, Menu as MenuIcon, ShieldAlert, BarChart3, Power, Moon, Sun, ChevronRight, Settings 
 } from 'lucide-react';
 
 interface Props {
@@ -61,6 +61,13 @@ export const MoreMenu: React.FC<Props> = ({
                     subtitle="Manage bans & spam protection"
                     onClick={() => onNavigate('SECURITY')}
                     colorClass="bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400"
+                />
+                 <MenuCard 
+                    icon={Settings} 
+                    title="Store Settings" 
+                    subtitle="Contact info & general configs"
+                    onClick={() => onNavigate('SETTINGS')}
+                    colorClass="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
                 />
             </div>
 

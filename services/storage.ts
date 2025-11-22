@@ -190,7 +190,12 @@ const mockDb = {
     
     // Init Settings
     if (!localStorage.getItem(STORAGE_KEYS.SETTINGS)) {
-        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify({ isBanSystemActive: true, isShopOpen: true }));
+        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify({ 
+            key: 'GLOBAL_SETTINGS', 
+            isBanSystemActive: true, 
+            isShopOpen: true,
+            vendorPhoneNumber: '9876543210' 
+        }));
     }
   },
 
@@ -434,7 +439,12 @@ const mockDb = {
   // --- MOCK ADMIN ---
   getSystemSettings: async (): Promise<SystemSettings> => {
     const stored = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-    return stored ? JSON.parse(stored) : { key: 'GLOBAL_SETTINGS', isBanSystemActive: true, isShopOpen: true };
+    return stored ? JSON.parse(stored) : { key: 'GLOBAL_SETTINGS', isBanSystemActive: true, isShopOpen: true, vendorPhoneNumber: '9876543210' };
+  },
+  updateSystemSettings: async (updates: Partial<SystemSettings>): Promise<void> => {
+      const settings = await mockDb.getSystemSettings();
+      const newSettings = { ...settings, ...updates };
+      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(newSettings));
   },
   toggleBanSystem: async (isActive: boolean): Promise<void> => {
     const settings = await mockDb.getSystemSettings();
