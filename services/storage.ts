@@ -1,4 +1,5 @@
-import { MenuItem, Order, OrderStatus, PaymentStatus, User, SpamRecord, SystemSettings } from '../types';
+
+import { MenuItem, Order, OrderStatus, PaymentStatus, User, SpamRecord, SystemSettings, OrderType, DeliveryDetails } from '../types';
 import { apiDb } from './api';
 
 // Constants
@@ -216,8 +217,8 @@ const mockDb = {
   },
 
   vendorLogin: async (password: string): Promise<boolean> => {
-    // For local testing, check env var or default to 'admin'
-    const mockPass = import.meta.env?.VITE_VENDOR_PASSWORD || 'admin';
+    // For local testing, check env var or default to '123'
+    const mockPass = import.meta.env?.VITE_VENDOR_PASSWORD || '123';
     await delay(500);
     return password === mockPass;
   },
@@ -289,7 +290,14 @@ const mockDb = {
     return orders.find(o => o.id === id) || null;
   },
 
-  createOrder: async (user: User, items: any[], total: number, paymentMethod: 'CASH' | 'UPI'): Promise<Order> => {
+  createOrder: async (
+    user: User, 
+    items: any[], 
+    total: number, 
+    paymentMethod: 'CASH' | 'UPI', 
+    orderType: OrderType = 'DINE_IN',
+    deliveryDetails?: DeliveryDetails
+  ): Promise<Order> => {
     await delay(800);
     
     // CHECK SETTINGS & BAN
@@ -346,6 +354,8 @@ const mockDb = {
       status: OrderStatus.NEW,
       paymentStatus: PaymentStatus.PENDING,
       paymentMethod,
+      orderType,
+      deliveryDetails,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -372,6 +382,7 @@ const mockDb = {
       status: OrderStatus.NEW,
       paymentStatus: paymentStatus,
       paymentMethod: 'CASH',
+      orderType: 'DINE_IN',
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };

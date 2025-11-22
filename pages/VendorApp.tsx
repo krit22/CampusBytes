@@ -3,7 +3,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { db } from '../services/storage';
 import { Order, OrderStatus, PaymentStatus, MenuItem } from '../types';
 import { 
-  RefreshCw, Lock, Clock, BellRing, ChefHat, Utensils, Grid, ClipboardList 
+  RefreshCw, Lock, Clock, BellRing, ChefHat, Utensils, Grid, ClipboardList, TestTube 
 } from 'lucide-react';
 
 // COMPONENTS
@@ -40,6 +40,9 @@ export const VendorApp: React.FC = () => {
   const [confirmConfig, setConfirmConfig] = useState<ConfirmConfig>({ 
       isOpen: false, title: '', message: '', onConfirm: () => {}, type: 'NEUTRAL' 
   });
+
+  // TEST MODE DETECTION
+  const isTestMode = import.meta.env?.DEV ?? false;
 
   const requestConfirm = (title: string, message: string, action: () => void, type: 'DANGER' | 'NEUTRAL' = 'NEUTRAL') => {
       setConfirmConfig({ isOpen: true, title, message, onConfirm: action, type });
@@ -304,7 +307,14 @@ export const VendorApp: React.FC = () => {
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
-        <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl text-center">
+        <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl text-center relative overflow-hidden">
+          {/* TEST MODE INDICATOR ON LOGIN */}
+          {isTestMode && (
+             <div className="absolute top-0 right-0 bg-yellow-400 text-slate-900 text-xs font-black px-3 py-1 rounded-bl-xl shadow-md z-10">
+                TEST MODE
+             </div>
+          )}
+
           <div className="w-16 h-16 bg-orange-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-orange-900/40">
             <Lock className="text-white" size={32} />
           </div>
@@ -328,6 +338,12 @@ export const VendorApp: React.FC = () => {
               {isLoggingIn ? 'Verifying...' : 'Access Dashboard'}
             </button>
           </form>
+          
+          {isTestMode && (
+             <p className="mt-6 text-slate-600 text-xs font-mono">
+                Dev Hint: Password is <span className="text-yellow-400 font-bold">123</span>
+             </p>
+          )}
         </div>
       </div>
     );
@@ -359,7 +375,14 @@ export const VendorApp: React.FC = () => {
               <ChefHat size={20} />
             </div>
             <div>
-              <h1 className="font-bold leading-none">CampusBytes</h1>
+              <div className="flex items-center gap-2">
+                  <h1 className="font-bold leading-none">CampusBytes</h1>
+                  {isTestMode && (
+                      <span className="bg-yellow-400 text-slate-900 text-[9px] font-black px-1.5 py-0.5 rounded flex items-center gap-1">
+                          <TestTube size={8} /> TEST
+                      </span>
+                  )}
+              </div>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className={`w-2 h-2 rounded-full ${isShopOpen ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
                 <span className="text-[10px] font-mono text-slate-400">{isShopOpen ? 'ONLINE' : 'CLOSED'}</span>

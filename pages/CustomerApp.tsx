@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState, useRef } from 'react';
-import { ShoppingBag, Utensils, Clock, LogOut, ChevronRight, Search, Flame, Lightbulb, Sparkles, Timer, RotateCcw } from 'lucide-react';
-import { MenuItem, CartItem, Order, OrderStatus, User } from '../types';
+import { ShoppingBag, Utensils, Clock, LogOut, ChevronRight, Search, Flame, Lightbulb, Sparkles, Timer, RotateCcw, MapPin, Phone } from 'lucide-react';
+import { MenuItem, CartItem, Order, OrderStatus, User, OrderType, DeliveryDetails } from '../types';
 import { db, parseJwt } from '../services/storage';
 import { CartSheet } from '../components/CartSheet';
 import { Badge } from '../components/Badge';
@@ -243,12 +243,12 @@ export const CustomerApp: React.FC = () => {
     setIsCartOpen(true);
   };
 
-  const handlePlaceOrder = async (method: 'CASH' | 'UPI') => {
+  const handlePlaceOrder = async (method: 'CASH' | 'UPI', orderType: OrderType, deliveryDetails?: DeliveryDetails) => {
     if (!user) return;
     setIsPlacingOrder(true);
     const total = cart.reduce((sum, i) => sum + (i.price * i.quantity), 0);
     try {
-      const order = await db.createOrder(user, cart, total, method);
+      const order = await db.createOrder(user, cart, total, method, orderType, deliveryDetails);
       setFocusedOrder(order);
       setView('ORDER_DETAILS');
       setCart([]);
@@ -303,12 +303,22 @@ export const CustomerApp: React.FC = () => {
       }
   };
 
-  const getEstTime = (status: OrderStatus) => {
-    switch (status) {
-      case OrderStatus.NEW: return "Go to counter & listen for Token";
-      case OrderStatus.COOKING: return "~10-15 mins";
-      case OrderStatus.READY: return "Ready now!";
-      default: return "";
+  const getEstTime = (status: OrderStatus, isDelivery: boolean) => {
+    if (isDelivery) {
+        switch (status) {
+            case OrderStatus.NEW: return "Confirming order...";
+            case OrderStatus.COOKING: return "~30 mins delivery";
+            case OrderStatus.READY: return "Packing...";
+            case OrderStatus.OUT_FOR_DELIVERY: return "Rider on the way!";
+            default: return "";
+        }
+    } else {
+        switch (status) {
+            case OrderStatus.NEW: return "Go to counter & listen for Token";
+            case OrderStatus.COOKING: return "~10-15 mins";
+            case OrderStatus.READY: return "Ready at Counter!";
+            default: return "";
+        }
     }
   }
 
@@ -326,11 +336,12 @@ export const CustomerApp: React.FC = () => {
      const activeOrder = focusedOrder;
      const isCancelled = activeOrder.status === OrderStatus.CANCELLED;
      const isDelivered = activeOrder.status === OrderStatus.DELIVERED;
+     const isDelivery = activeOrder.orderType === 'DELIVERY';
      
      let headerBg = 'bg-orange-600';
      let title = 'Order Placed!';
-     let subtitle = 'Show this screen to the counter';
-     let estTime = getEstTime(activeOrder.status);
+     let subtitle = isDelivery ? 'Vendor will confirm soon' : 'Show this screen to the counter';
+     let estTime = getEstTime(activeOrder.status, isDelivery);
  
      if (isCancelled) {
        headerBg = 'bg-red-600';
@@ -342,16 +353,21 @@ export const CustomerApp: React.FC = () => {
        title = 'Order Delivered';
        subtitle = 'Enjoy your meal!';
        estTime = "";
+     } else if (activeOrder.status === OrderStatus.OUT_FOR_DELIVERY) {
+        headerBg = 'bg-purple-600 animate-pulse';
+        title = 'Out for Delivery';
+        subtitle = 'Your food is on the way';
      } else if (activeOrder.status === OrderStatus.READY) {
        headerBg = 'bg-green-600 animate-pulse';
-       title = 'Order Ready!';
-       subtitle = 'Please pick up your order';
+       title = isDelivery ? 'Order Packed' : 'Order Ready!';
+       subtitle = isDelivery ? 'Waiting for rider' : 'Please pick up your order';
      } else if (activeOrder.status === OrderStatus.COOKING) {
         title = 'Preparing...';
+        subtitle = 'Chefs are at work';
      } else if (activeOrder.status === OrderStatus.NEW) {
-        title = 'Go to Counter';
-        subtitle = 'Listen for your Token number';
         headerBg = 'bg-blue-600';
+        title = 'Order Sent';
+        subtitle = isDelivery ? 'Waiting for confirmation' : 'Listen for your Token number';
      }
 
      return (
@@ -374,7 +390,9 @@ export const CustomerApp: React.FC = () => {
                     </div>
                     
                     <div className="p-8 flex flex-col items-center text-center">
-                        <div className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">Your Token</div>
+                        <div className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-2">
+                            {isDelivery ? 'Order ID' : 'Your Token'}
+                        </div>
                         <div className="text-6xl font-black text-slate-900 mb-6 font-mono tracking-tight">{activeOrder.token}</div>
                         
                         {estTime && (
@@ -385,6 +403,24 @@ export const CustomerApp: React.FC = () => {
                         )}
                         
                         <div className="w-full space-y-6">
+                          {/* Delivery Info Card */}
+                          {isDelivery && activeOrder.deliveryDetails && (
+                              <div className="bg-purple-50 p-4 rounded-xl border border-purple-100 flex items-start gap-3 text-left">
+                                  <MapPin className="shrink-0 text-purple-600 mt-1" size={20} />
+                                  <div className="flex-1">
+                                      <div className="text-xs font-bold text-purple-700 uppercase mb-1">Delivering To</div>
+                                      <div className="font-bold text-slate-800">{activeOrder.deliveryDetails.location}</div>
+                                      <div className="text-sm text-slate-600">{activeOrder.deliveryDetails.instructions}</div>
+                                      
+                                      {!isCancelled && !isDelivered && (
+                                         <a href="tel:+919876543210" className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-purple-600 border border-purple-200 bg-white px-3 py-1.5 rounded-lg hover:bg-purple-100">
+                                             <Phone size={12} /> Call Vendor
+                                         </a>
+                                      )}
+                                  </div>
+                              </div>
+                          )}
+
                           <div className="flex items-center justify-between p-4 bg-slate-50 rounded-xl border border-slate-100">
                               <div className="flex items-center gap-3">
                                   <div className={`p-2 rounded-full ${activeOrder.status === OrderStatus.NEW ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-400'}`}>
@@ -423,7 +459,8 @@ export const CustomerApp: React.FC = () => {
                                   <span>Total</span>
                                   <span className="text-orange-600">₹{activeOrder.totalAmount}</span>
                               </div>
-                              <div className="mt-2 text-right">
+                              <div className="mt-2 text-right flex justify-between items-center">
+                                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Payment Status</span>
                                   <Badge status={activeOrder.paymentStatus} type="payment" />
                               </div>
                           </div>
@@ -454,17 +491,20 @@ export const CustomerApp: React.FC = () => {
   }
 
   if (view === 'HISTORY') {
-      const activeHistoryOrders = userOrders.filter(o => [OrderStatus.NEW, OrderStatus.COOKING, OrderStatus.READY].includes(o.status));
+      const activeHistoryOrders = userOrders.filter(o => [OrderStatus.NEW, OrderStatus.COOKING, OrderStatus.READY, OrderStatus.OUT_FOR_DELIVERY].includes(o.status));
       const pastHistoryOrders = userOrders.filter(o => [OrderStatus.DELIVERED, OrderStatus.CANCELLED].includes(o.status));
 
       const OrderCard: React.FC<{ order: Order }> = ({ order }) => (
         <div 
             onClick={() => { setFocusedOrder(order); setView('ORDER_DETAILS'); }}
-            className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 active:scale-[0.98] transition-transform group"
+            className={`bg-white p-4 rounded-2xl shadow-sm border active:scale-[0.98] transition-transform group ${order.orderType === 'DELIVERY' ? 'border-purple-100' : 'border-slate-100'}`}
         >
             <div className="flex justify-between items-start mb-3">
                 <div className="flex items-center gap-2">
                     <span className="font-mono font-bold text-lg bg-slate-100 px-2 rounded text-slate-700">{order.token}</span>
+                    {order.orderType === 'DELIVERY' && (
+                        <span className="bg-purple-100 text-purple-600 text-[10px] font-bold px-1.5 py-0.5 rounded">DELIVERY</span>
+                    )}
                     <div className="text-xs text-slate-500">{new Date(order.createdAt).toLocaleDateString()}</div>
                 </div>
                 <Badge status={order.status} />

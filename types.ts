@@ -3,6 +3,7 @@ export enum OrderStatus {
   NEW = 'NEW',
   COOKING = 'COOKING',
   READY = 'READY',
+  OUT_FOR_DELIVERY = 'OUT_FOR_DELIVERY',
   DELIVERED = 'DELIVERED',
   CANCELLED = 'CANCELLED'
 }
@@ -10,6 +11,14 @@ export enum OrderStatus {
 export enum PaymentStatus {
   PENDING = 'PENDING',
   PAID = 'PAID'
+}
+
+export type OrderType = 'DINE_IN' | 'DELIVERY';
+
+export interface DeliveryDetails {
+  phoneNumber: string;
+  location: string; // e.g., "Hall 1" or "Library"
+  instructions: string; // e.g., "Room 202"
 }
 
 export interface MenuItem {
@@ -44,6 +53,8 @@ export interface Order {
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   paymentMethod: 'CASH' | 'UPI';
+  orderType: OrderType;
+  deliveryDetails?: DeliveryDetails;
   createdAt: number; // timestamp
   updatedAt: number; // timestamp
 }

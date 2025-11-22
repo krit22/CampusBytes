@@ -1,3 +1,4 @@
+
 import 'dotenv/config';
 import express from 'express';
 import mongoose from 'mongoose';
@@ -28,6 +29,12 @@ const OrderSchema = new mongoose.Schema({
   status: { type: String, default: 'NEW' },
   paymentStatus: { type: String, default: 'PENDING' },
   paymentMethod: String,
+  orderType: { type: String, default: 'DINE_IN' },
+  deliveryDetails: {
+    phoneNumber: String,
+    location: String,
+    instructions: String
+  },
   createdAt: { type: Number, default: Date.now },
   updatedAt: { type: Number, default: Date.now }
 });
@@ -151,14 +158,10 @@ async function handleSpamStrike(customerId, customerName) {
   record.lastStrikeAt = Date.now();
 
   // BAN LOGIC - REFINED (3 Strikes Rule)
-  // Only ban if strikes reach 3.
-  // Duration depends on how many times they've been banned before (banCount).
-  
   if (record.strikes >= 3) {
     record.isBanned = true;
     record.banCount += 1; // Increment historical ban count
     
-    // Determine duration based on Ban Level (1st, 2nd, 3rd time banned)
     if (record.banCount === 1) {
         record.banExpiresAt = Date.now() + (60 * 60 * 1000); // 1 Hour
         record.banReason = "Temp Ban (1h): 3 consecutive cancellations.";
@@ -175,12 +178,10 @@ async function handleSpamStrike(customerId, customerName) {
 }
 
 async function handleSuccessfulOrder(customerId) {
-    // If an order is successfully DELIVERED, reset strikes.
-    // This ensures bans only happen for CONSECUTIVE spam.
     try {
         await SpamRecord.findOneAndUpdate(
             { customerId },
-            { strikes: 0 } // Reset current strike count
+            { strikes: 0 } 
         );
     } catch (e) {
         console.error("Error resetting strikes", e);
@@ -189,19 +190,16 @@ async function handleSuccessfulOrder(customerId) {
 
 // --- ROUTES ---
 
-// Health Check Endpoint for Cron Jobs / Uptime Monitors
 app.get('/api/health', (req, res) => {
   res.status(200).json({ status: 'ok', timestamp: Date.now() });
 });
 
-// Vendor Login Endpoint
 app.post('/api/vendor/login', (req, res) => {
   const { password } = req.body;
-  const securePassword = process.env.VENDOR_PASSWORD;
+  // FALLBACK TO '123' for local dev if VENDOR_PASSWORD not set
+  const securePassword = process.env.VENDOR_PASSWORD || (process.env.NODE_ENV === 'production' ? null : '123');
   
   if (!securePassword) {
-    console.error("VENDOR_PASSWORD not set in environment variables.");
-    // Fail securely if env var is missing
     return res.status(500).json({ error: "Server Login Configuration Error" });
   }
 
@@ -212,7 +210,6 @@ app.post('/api/vendor/login', (req, res) => {
   }
 });
 
-// Get Menu (Auto-seed / Update)
 app.get('/api/menu', async (req, res) => {
   try {
     const bulkOps = INITIAL_MENU.map(item => ({
@@ -246,7 +243,6 @@ app.get('/api/menu', async (req, res) => {
   }
 });
 
-// Add New Menu Item
 app.post('/api/menu', async (req, res) => {
   try {
     const newItem = new Menu(req.body);
@@ -257,7 +253,6 @@ app.post('/api/menu', async (req, res) => {
   }
 });
 
-// Delete Menu Item
 app.delete('/api/menu/:id', async (req, res) => {
   try {
     await Menu.findByIdAndDelete(req.params.id);
@@ -267,10 +262,8 @@ app.delete('/api/menu/:id', async (req, res) => {
   }
 });
 
-// Update Menu Item (Generic)
 app.put('/api/menu/:id', async (req, res) => {
   try {
-    // Allow updating any field passed in body (isAvailable, isBestseller, etc)
     await Menu.findByIdAndUpdate(req.params.id, req.body);
     res.json({ success: true });
   } catch (e) {
@@ -278,15 +271,20 @@ app.put('/api/menu/:id', async (req, res) => {
   }
 });
 
-// Create Order
 app.post('/api/orders', async (req, res) => {
   try {
-    const { customerId, customerName, items, totalAmount, paymentMethod } = req.body;
+    const { 
+        customerId, 
+        customerName, 
+        items, 
+        totalAmount, 
+        paymentMethod, 
+        orderType,
+        deliveryDetails 
+    } = req.body;
     
-    // --- SECURITY & BAN CHECK ---
     const settings = await getSystemSettings();
 
-    // Check Shop Status
     if (!settings.isShopOpen && customerId !== 'vendor_manual') {
         return res.status(503).json({ error: "Shop is currently closed." });
     }
@@ -294,14 +292,11 @@ app.post('/api/orders', async (req, res) => {
     if (settings.isBanSystemActive && customerId !== 'vendor_manual') {
         const record = await SpamRecord.findOne({ customerId });
         if (record && record.isBanned) {
-            // Check expiry
             if (Date.now() > record.banExpiresAt) {
-                // Ban expired -> UNBAN USER & RESET STRIKES
                 record.isBanned = false;
-                record.strikes = 0; // RESET STRIKES so they get fresh 3 chances
+                record.strikes = 0; 
                 await record.save();
             } else {
-                // Still banned
                 return res.status(403).json({
                     error: "Account Suspended",
                     banReason: record.banReason,
@@ -310,14 +305,11 @@ app.post('/api/orders', async (req, res) => {
             }
         }
     }
-    // ----------------------------
 
-    // BYPASS FOR VENDOR MANUAL ORDERS
     if (customerId !== 'vendor_manual') {
-        // 1. Check total active orders for this user (STRICT: Max 3)
         const activeOrdersCount = await Order.countDocuments({
             customerId,
-            status: { $in: ['NEW', 'COOKING', 'READY'] }
+            status: { $in: ['NEW', 'COOKING', 'READY', 'OUT_FOR_DELIVERY'] }
         });
 
         if (activeOrdersCount >= 3) {
@@ -326,11 +318,10 @@ app.post('/api/orders', async (req, res) => {
             });
         }
 
-        // 2. Cooldown check (STRICT: 30 Seconds)
         const lastOrder = await Order.findOne({ customerId }).sort({ createdAt: -1 });
         if (lastOrder) {
             const timeDiff = Date.now() - lastOrder.createdAt;
-            if (timeDiff < 30000) { // 30 seconds
+            if (timeDiff < 30000) { 
                 return res.status(429).json({ 
                     error: "Please wait 30 seconds before placing another order." 
                 });
@@ -349,6 +340,8 @@ app.post('/api/orders', async (req, res) => {
       paymentMethod,
       status: 'NEW',
       paymentStatus: 'PENDING',
+      orderType: orderType || 'DINE_IN',
+      deliveryDetails,
       createdAt: Date.now(),
       updatedAt: Date.now()
     });
@@ -360,7 +353,6 @@ app.post('/api/orders', async (req, res) => {
   }
 });
 
-// Get Orders (All or User specific)
 app.get('/api/orders', async (req, res) => {
   try {
     const { userId } = req.query;
@@ -373,20 +365,17 @@ app.get('/api/orders', async (req, res) => {
   }
 });
 
-// Update Order Status
 app.put('/api/orders/:id/status', async (req, res) => {
   try {
     const { status } = req.body;
     
     const order = await Order.findById(req.params.id);
     if (order) {
-        // Handle Status Logic
         if (status === 'CANCELLED') {
             if (order.customerId !== 'vendor_manual') {
                 await handleSpamStrike(order.customerId, order.customerName);
             }
         } else if (status === 'DELIVERED') {
-            // Success! Reset strikes for good behavior.
             if (order.customerId !== 'vendor_manual') {
                 await handleSuccessfulOrder(order.customerId);
             }
@@ -402,7 +391,6 @@ app.put('/api/orders/:id/status', async (req, res) => {
   }
 });
 
-// Update Payment Status
 app.put('/api/orders/:id/payment', async (req, res) => {
   try {
     const { status } = req.body;
@@ -413,15 +401,13 @@ app.put('/api/orders/:id/payment', async (req, res) => {
   }
 });
 
-// --- ADMIN / SECURITY ENDPOINTS ---
-
 app.get('/api/admin/settings', async (req, res) => {
     const settings = await getSystemSettings();
     res.json(settings);
 });
 
 app.put('/api/admin/settings', async (req, res) => {
-    const updates = req.body; // Handle generic updates (banSystem, shopOpen)
+    const updates = req.body; 
     await SystemSettings.findOneAndUpdate({ key: 'GLOBAL_SETTINGS' }, updates, { upsert: true });
     res.json({ success: true });
 });
@@ -433,17 +419,14 @@ app.get('/api/admin/banned-users', async (req, res) => {
 
 app.post('/api/admin/unban-user', async (req, res) => {
     const { customerId } = req.body;
-    // UNBAN: Reset strikes to 0 so they don't get banned immediately again.
     await SpamRecord.findOneAndUpdate({ customerId }, { isBanned: false, strikes: 0 });
     res.json({ success: true });
 });
 
 app.post('/api/admin/unban-all', async (req, res) => {
-    // UNBAN ALL: Reset strikes to 0 for everyone.
     await SpamRecord.updateMany({}, { isBanned: false, strikes: 0 });
     res.json({ success: true });
 });
-
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
