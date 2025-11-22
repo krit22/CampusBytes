@@ -457,7 +457,7 @@ export const CustomerApp: React.FC = () => {
       const activeHistoryOrders = userOrders.filter(o => [OrderStatus.NEW, OrderStatus.COOKING, OrderStatus.READY].includes(o.status));
       const pastHistoryOrders = userOrders.filter(o => [OrderStatus.DELIVERED, OrderStatus.CANCELLED].includes(o.status));
 
-      const OrderCard = ({ order }: { order: Order }) => (
+      const OrderCard: React.FC<{ order: Order }> = ({ order }) => (
         <div 
             onClick={() => { setFocusedOrder(order); setView('ORDER_DETAILS'); }}
             className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 active:scale-[0.98] transition-transform group"

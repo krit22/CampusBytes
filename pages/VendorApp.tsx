@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { db } from '../services/storage';
 import { Order, OrderStatus, PaymentStatus, MenuItem } from '../types';
@@ -517,7 +518,7 @@ export const VendorApp: React.FC = () => {
   }
 };
 
-const DesktopTab = ({ id, active, onClick, count }: { id: string, active: string, onClick: (id: string) => void, count: number }) => (
+const DesktopTab: React.FC<{ id: string, active: string, onClick: (id: string) => void, count: number }> = ({ id, active, onClick, count }) => (
    <button 
      onClick={() => onClick(id)}
      className={`relative px-8 py-4 font-bold text-sm tracking-wide transition-all border-b-4 ${active === id ? 'border-orange-500 text-white bg-slate-900' : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-900/50'}`}

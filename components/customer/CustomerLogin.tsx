@@ -31,19 +31,43 @@ export const CustomerLogin: React.FC<Props> = ({ onGoogleLogin, onGuestLogin }) 
     };
 
     useEffect(() => {
-        if (GOOGLE_CLIENT_ID && window.google && !showEmailForm) {
-          try {
-            window.google.accounts.id.initialize({
-              client_id: GOOGLE_CLIENT_ID,
-              callback: onGoogleLogin
-            });
-            window.google.accounts.id.renderButton(
-              document.getElementById("googleBtnWrapper"),
-              { theme: "outline", size: "large", width: "100%", text: "continue_with" }
-            );
-          } catch (e) {
-            console.error("Google Auth Init Error:", e);
-          }
+        // Skip if no Client ID or if we are showing the email form
+        if (!GOOGLE_CLIENT_ID || showEmailForm) return;
+
+        const initializeGoogle = () => {
+            // Check if the Google script has loaded and the object is available
+            if (window.google && window.google.accounts) {
+                try {
+                    window.google.accounts.id.initialize({
+                        client_id: GOOGLE_CLIENT_ID,
+                        callback: onGoogleLogin
+                    });
+                    const parent = document.getElementById("googleBtnWrapper");
+                    if (parent) {
+                        window.google.accounts.id.renderButton(
+                            parent,
+                            { theme: "outline", size: "large", width: "100%", text: "continue_with" }
+                        );
+                    }
+                } catch (e) {
+                    console.error("Google Auth Init Error:", e);
+                }
+                return true; // Successfully initialized
+            }
+            return false; // Not ready yet
+        };
+
+        // Attempt initialization immediately
+        if (!initializeGoogle()) {
+            // If unsuccessful (script loading), poll every 100ms
+            const intervalId = setInterval(() => {
+                if (initializeGoogle()) {
+                    clearInterval(intervalId);
+                }
+            }, 100);
+
+            // Cleanup interval on unmount or dependency change
+            return () => clearInterval(intervalId);
         }
     }, [showEmailForm, onGoogleLogin]);
 
