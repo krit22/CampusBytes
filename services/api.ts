@@ -1,4 +1,5 @@
-import { MenuItem, Order, OrderStatus, PaymentStatus, User, SpamRecord, SystemSettings } from '../types';
+
+import { MenuItem, Order, OrderStatus, PaymentStatus, User, SpamRecord, SystemSettings, OrderType, DeliveryDetails } from '../types';
 
 // Get API URL from Environment, default to Render for AI Studio/Dev
 // Use optional chaining safely
@@ -13,101 +14,111 @@ export const apiDb = {
 
   // --- AUTH ---
   login: async (userData?: Partial<User>): Promise<User> => {
-    // 1. Create the user object (Simulating a login response)
-    const user: User = {
-      id: userData?.id || 'guest_' + Date.now(),
-      name: userData?.name || 'Guest',
-      email: userData?.email || '',
-      avatar: userData?.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${userData?.name || 'Guest'}`
-    };
-
-    // 2. PERSIST SESSION (Crucial for staying logged in)
-    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+    let user = userData;
     
-    return user;
-  },
-
-  logout: async () => {
-    // 3. CLEAR SESSION
-    localStorage.removeItem(USER_STORAGE_KEY);
+    // If no user data provided (auto-login attempt), check local storage
+    if (!user) {
+        const stored = localStorage.getItem(USER_STORAGE_KEY);
+        if (stored) {
+            user = JSON.parse(stored);
+        } else {
+            throw new Error("No user session found");
+        }
+    } else {
+        // If logging in fresh, normalize ID
+        if (!user.id && user.email) {
+             user.id = 'u_' + Math.abs(user.email.hashCode());
+        }
+        // Persist
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+    }
+    
+    return user as User;
   },
 
   vendorLogin: async (password: string): Promise<boolean> => {
     try {
-      const res = await fetch(`${API_URL}/api/vendor/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password })
-      });
-      return res.ok;
+        const res = await fetch(`${API_URL}/api/vendor/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password })
+        });
+        if (!res.ok) return false;
+        return true;
     } catch (e) {
-      console.error("Vendor login error", e);
-      return false;
+        console.error("Vendor login api error", e);
+        return false;
     }
   },
 
+  logout: async (): Promise<void> => {
+    localStorage.removeItem(USER_STORAGE_KEY);
+  },
+
   getCurrentUser: (): User | null => {
-    // 4. REHYDRATE SESSION
     const stored = localStorage.getItem(USER_STORAGE_KEY);
     return stored ? JSON.parse(stored) : null;
+  },
+
+  updateUser: async (updates: Partial<User>): Promise<User> => {
+    const storedUserStr = localStorage.getItem(USER_STORAGE_KEY);
+    if (!storedUserStr) throw new Error("No user found");
+    
+    const user = JSON.parse(storedUserStr);
+    const updatedUser = { ...user, ...updates };
+    
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser));
+    return updatedUser;
   },
 
   // --- DATA ---
   getMenu: async (): Promise<MenuItem[]> => {
     const res = await fetch(`${API_URL}/api/menu`);
-    if (!res.ok) throw new Error('Failed to fetch menu');
+    if (!res.ok) throw new Error("Failed to fetch menu");
     return res.json();
   },
   
-  // Refactored to Generic Update
   updateMenuItem: async (itemId: string, updates: Partial<MenuItem>): Promise<void> => {
-    await fetch(`${API_URL}/api/menu/${itemId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates)
-    });
+      await fetch(`${API_URL}/api/menu/${itemId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updates)
+      });
   },
 
   addMenuItem: async (item: Partial<MenuItem>): Promise<MenuItem> => {
-    const res = await fetch(`${API_URL}/api/menu`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(item)
-    });
-    if (!res.ok) throw new Error('Failed to add menu item');
-    return res.json();
+      const res = await fetch(`${API_URL}/api/menu`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(item)
+      });
+      return res.json();
   },
 
   deleteMenuItem: async (itemId: string): Promise<void> => {
-    await fetch(`${API_URL}/api/menu/${itemId}`, {
-      method: 'DELETE'
-    });
+      await fetch(`${API_URL}/api/menu/${itemId}`, { method: 'DELETE' });
   },
 
   getOrders: async (): Promise<Order[]> => {
     const res = await fetch(`${API_URL}/api/orders`);
-    if (!res.ok) throw new Error('Failed to fetch orders');
+    if (!res.ok) throw new Error("Failed to fetch orders");
     return res.json();
   },
 
   getUserOrders: async (userId: string): Promise<Order[]> => {
     const res = await fetch(`${API_URL}/api/orders?userId=${userId}`);
-    if (!res.ok) throw new Error('Failed to fetch user orders');
+    if (!res.ok) throw new Error("Failed to fetch user orders");
     return res.json();
   },
 
-  getOrderById: async (id: string): Promise<Order | null> => {
-    try {
-      const res = await fetch(`${API_URL}/api/orders`);
-      if (!res.ok) return null;
-      const orders: Order[] = await res.json();
-      return orders.find(o => o.id === id) || null;
-    } catch (e) {
-      return null;
-    }
-  },
-
-  createOrder: async (user: User, items: any[], total: number, paymentMethod: 'CASH' | 'UPI'): Promise<Order> => {
+  createOrder: async (
+    user: User, 
+    items: any[], 
+    total: number, 
+    paymentMethod: 'CASH' | 'UPI',
+    orderType: OrderType = 'DINE_IN',
+    deliveryDetails?: DeliveryDetails
+  ): Promise<Order> => {
     const res = await fetch(`${API_URL}/api/orders`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -116,23 +127,26 @@ export const apiDb = {
         customerName: user.name,
         items,
         totalAmount: total,
-        paymentMethod
+        paymentMethod,
+        orderType,
+        deliveryDetails
       })
     });
     
-    // Handle Errors (403 Ban, 429 Rate Limit)
     if (!res.ok) {
-        const errorData = await res.json();
-        const error: any = new Error(errorData.error || 'Failed to create order');
-        error.status = res.status;
-        error.data = errorData; // Contains ban details
+        const err = await res.json();
+        const error: any = new Error(err.error || "Failed to create order");
+        if (res.status === 403) {
+            error.status = 403;
+            error.data = err;
+        }
         throw error;
     }
     return res.json();
   },
-  
+
   createManualOrder: async (customerName: string, items: any[], total: number, paymentStatus: PaymentStatus): Promise<Order> => {
-    // Use 'vendor_manual' as ID to bypass rate limiting on server
+    // Reusing the create order endpoint, but the backend handles 'vendor_manual' customerId specifically
     const res = await fetch(`${API_URL}/api/orders`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -141,20 +155,22 @@ export const apiDb = {
         customerName: customerName || 'Walk-in Customer',
         items,
         totalAmount: total,
-        paymentMethod: 'CASH' // Default to cash for walk-ins mostly
+        paymentMethod: 'CASH',
+        orderType: 'DINE_IN'
       })
     });
     
-    if (!res.ok) throw new Error('Failed to create manual order');
-    const newOrder = await res.json();
-
-    // If the vendor marks it as PAID immediately
+    // Since manual orders might be PAID immediately, we might need a second call or update backend.
+    // For now, we create it as PENDING (default) then update if needed, OR relies on backend default.
+    // But wait, mockDb allows passing paymentStatus. API needs to support it or we update immediately.
+    const order = await res.json();
+    
     if (paymentStatus === PaymentStatus.PAID) {
-       await apiDb.updatePaymentStatus(newOrder.id, PaymentStatus.PAID);
-       newOrder.paymentStatus = PaymentStatus.PAID;
+        await apiDb.updatePaymentStatus(order.id, PaymentStatus.PAID);
+        order.paymentStatus = PaymentStatus.PAID;
     }
-
-    return newOrder;
+    
+    return order;
   },
 
   updateOrderStatus: async (orderId: string, status: OrderStatus): Promise<void> => {
@@ -173,68 +189,82 @@ export const apiDb = {
     });
   },
   
+  // Polling Wrapper for API (since we don't have sockets)
   subscribeToOrders: (callback: (orders: Order[]) => void) => {
-    // Polling for API mode (fetches every 3 seconds)
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`${API_URL}/api/orders`);
-        if (res.ok) {
-          const orders = await res.json();
-          callback(orders);
-        }
+        const orders = await apiDb.getOrders();
+        callback(orders);
       } catch (e) {
-        console.error(e);
+        // silent fail on poll
       }
-    }, 3000);
+    }, 2000); // Slower poll for API
     return () => clearInterval(interval);
   },
 
-  // --- ADMIN / SECURITY ---
+  // --- ADMIN ---
   getSystemSettings: async (): Promise<SystemSettings> => {
-    try {
-        const res = await fetch(`${API_URL}/api/admin/settings`);
-        return res.json();
-    } catch (e) {
-        return { key: 'GLOBAL_SETTINGS', isBanSystemActive: true };
-    }
+      const res = await fetch(`${API_URL}/api/admin/settings`);
+      return res.json();
   },
-
+  updateSystemSettings: async (updates: Partial<SystemSettings>): Promise<void> => {
+      await fetch(`${API_URL}/api/admin/settings`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updates)
+      });
+  },
   toggleBanSystem: async (isActive: boolean): Promise<void> => {
-    await fetch(`${API_URL}/api/admin/settings`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isBanSystemActive: isActive })
-    });
+      await fetch(`${API_URL}/api/admin/settings`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ isBanSystemActive: isActive })
+      });
   },
-
   toggleShopStatus: async (isOpen: boolean): Promise<void> => {
-    await fetch(`${API_URL}/api/admin/settings`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isShopOpen: isOpen })
-    });
+      await fetch(`${API_URL}/api/admin/settings`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ isShopOpen: isOpen })
+      });
   },
-
   getBannedUsers: async (): Promise<SpamRecord[]> => {
-    try {
-        const res = await fetch(`${API_URL}/api/admin/banned-users`);
-        return res.json();
-    } catch (e) {
-        return [];
-    }
+      const res = await fetch(`${API_URL}/api/admin/banned-users`);
+      return res.json();
   },
-
   unbanUser: async (customerId: string): Promise<void> => {
-    await fetch(`${API_URL}/api/admin/unban-user`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ customerId })
-    });
+      await fetch(`${API_URL}/api/admin/unban-user`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ customerId })
+      });
+  },
+  unbanAllUsers: async (): Promise<void> => {
+      await fetch(`${API_URL}/api/admin/unban-all`, { method: 'POST' });
   },
 
-  unbanAllUsers: async (): Promise<void> => {
-    await fetch(`${API_URL}/api/admin/unban-all`, {
-        method: 'POST'
-    });
+  // Passthrough for completeness (not really used in API mode locally usually)
+  getOrderById: async (id: string): Promise<Order | null> => {
+      // In real app, add endpoint. For now, just fetch all and find.
+      const orders = await apiDb.getOrders();
+      return orders.find(o => o.id === id) || null;
   }
+};
+
+// --- EXTENSIONS ---
+declare global {
+  interface String {
+    hashCode(): number;
+  }
+}
+
+String.prototype.hashCode = function() {
+  var hash = 0, i, chr;
+  if (this.length === 0) return hash;
+  for (i = 0; i < this.length; i++) {
+    chr = this.charCodeAt(i);
+    hash = ((hash << 5) - hash) + chr;
+    hash |= 0; 
+  }
+  return hash;
 };

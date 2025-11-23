@@ -41,8 +41,8 @@ export const MenuList: React.FC<Props> = ({ menu, onToggleStatus, onDeleteItem, 
                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
                  {menuCategories.map(cat => (
                    <button
-                     key={cat}
-                     onClick={() => scrollToCat(cat)}
+                     key={cat as string}
+                     onClick={() => scrollToCat(cat as string)}
                      className={`px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition-all ${menuCatFilter === cat ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
                    >
                      {cat}
@@ -73,7 +73,7 @@ export const MenuList: React.FC<Props> = ({ menu, onToggleStatus, onDeleteItem, 
                  if (items.length === 0) return null;
 
                  return (
-                   <div key={cat} ref={el => { categoryRefs.current[cat] = el; }}>
+                   <div key={cat as string} ref={el => { categoryRefs.current[cat as string] = el; }}>
                       <h3 className="text-sm font-black text-slate-400 uppercase tracking-wider mb-2 ml-1">{cat}</h3>
                       <div className="bg-white dark:bg-slate-850 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800 overflow-hidden transition-colors">
                          {items.map(item => (

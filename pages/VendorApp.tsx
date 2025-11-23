@@ -1,9 +1,9 @@
 
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { db } from '../services/storage';
 import { Order, OrderStatus, PaymentStatus, MenuItem } from '../types';
 import { 
-  RefreshCw, Lock, Clock, BellRing, ChefHat, Utensils, Grid, ClipboardList 
+  RefreshCw, Lock, Clock, BellRing, ChefHat, Utensils, Grid, ClipboardList, TestTube 
 } from 'lucide-react';
 
 // COMPONENTS
@@ -16,13 +16,98 @@ import { StatsDashboard } from '../components/vendor/StatsDashboard';
 import { OrderCard } from '../components/vendor/OrderCard';
 import { MenuList } from '../components/vendor/MenuList';
 import { MoreMenu } from '../components/vendor/MoreMenu';
+import { SettingsPanel } from '../components/vendor/SettingsPanel';
 
 // HOOKS
 import { useAudio } from '../hooks/useAudio';
 
+// --- HELPER COMPONENTS (Defined OUTSIDE to prevent re-mounting glitches) ---
+
+interface OrderGridProps {
+  orders: Order[];
+  currentTime: number;
+  updateStatus: (id: string, status: OrderStatus) => void;
+  updatePayment: (id: string, status: PaymentStatus) => void;
+  completeOrder: (order: Order) => void;
+  requestConfirm: (title: string, message: string, action: () => void, type: 'DANGER' | 'NEUTRAL') => void;
+}
+
+const OrderGrid: React.FC<OrderGridProps> = ({ orders, currentTime, updateStatus, updatePayment, completeOrder, requestConfirm }) => {
+    if (orders.length === 0) {
+        return (
+          <div className="col-span-full text-center py-20 text-slate-400">
+              <div className="w-16 h-16 bg-slate-200 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Clock size={30} />
+              </div>
+              <p className="font-medium">No orders in this stage.</p>
+          </div>
+        );
+    }
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {orders.map(order => (
+              <OrderCard 
+                  key={order.id} order={order} currentTime={currentTime}
+                  updateStatus={updateStatus} updatePayment={updatePayment}
+                  completeOrder={completeOrder} requestConfirm={requestConfirm}
+              />
+          ))}
+      </div>
+    );
+};
+
+const SubViewWrapper: React.FC<{ title: string; onBack: () => void; children: React.ReactNode }> = ({ title, onBack, children }) => {
+    return (
+        <div className="space-y-4">
+            <div className="flex items-center gap-3 mb-4">
+                <button onClick={onBack} className="p-2 bg-white dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm">
+                    <Grid size={20} className="dark:text-white" />
+                </button>
+                <h2 className="text-xl font-bold text-slate-800 dark:text-white">{title}</h2>
+            </div>
+            {children}
+        </div>
+    )
+}
+
+const DesktopTab: React.FC<{ id: string, active: string, onClick: (id: string) => void, count: number }> = ({ id, active, onClick, count }) => (
+   <button 
+     onClick={() => onClick(id)}
+     className={`relative px-8 py-4 font-bold text-sm tracking-wide transition-all border-b-4 ${active === id ? 'border-orange-500 text-white bg-slate-900' : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-900/50'}`}
+   >
+     {id === 'NEW' ? 'PENDING' : id}
+     {count > 0 && (
+       <span className={`ml-2 px-1.5 py-0.5 text-[10px] rounded-full ${active === id ? 'bg-orange-500 text-white' : 'bg-slate-800 text-slate-400'}`}>
+         {count}
+       </span>
+     )}
+   </button>
+);
+
+const MobileTab = ({ id, icon: Icon, label, active, onClick, count }: any) => (
+  <button 
+    onClick={() => onClick(id)}
+    className={`flex flex-col items-center justify-center relative transition-colors ${active === id ? 'text-orange-600 dark:text-orange-500' : 'text-slate-400 dark:text-slate-600'}`}
+  >
+    <div className={`p-1 rounded-xl transition-all ${active === id ? 'bg-orange-50 dark:bg-orange-900/20' : ''}`}>
+        <Icon size={active === id ? 22 : 20} strokeWidth={active === id ? 2.5 : 2} />
+    </div>
+    <span className="text-[10px] font-bold mt-0.5">{label}</span>
+    {count > 0 && (
+      <span className="absolute top-1 right-2 min-w-[16px] h-4 bg-red-500 text-white text-[9px] font-bold flex items-center justify-center rounded-full px-1 border border-white dark:border-slate-900">
+        {count}
+      </span>
+    )}
+  </button>
+);
+
 export const VendorApp: React.FC = () => {
   // --- STATE ---
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  // Initialize from localStorage to persist login across refreshes
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+      return localStorage.getItem('cb_vendor_authenticated') === 'true';
+  });
+  
   const [password, setPassword] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -40,6 +125,9 @@ export const VendorApp: React.FC = () => {
   const [confirmConfig, setConfirmConfig] = useState<ConfirmConfig>({ 
       isOpen: false, title: '', message: '', onConfirm: () => {}, type: 'NEUTRAL' 
   });
+
+  // TEST MODE DETECTION
+  const isTestMode = import.meta.env?.DEV ?? false;
 
   const requestConfirm = (title: string, message: string, action: () => void, type: 'DANGER' | 'NEUTRAL' = 'NEUTRAL') => {
       setConfirmConfig({ isOpen: true, title, message, onConfirm: action, type });
@@ -72,8 +160,9 @@ export const VendorApp: React.FC = () => {
     try {
       const success = await db.vendorLogin(password);
       if (success) {
+        localStorage.setItem('cb_vendor_authenticated', 'true');
         setIsAuthenticated(true);
-        loadData();
+        // loadData() will be called by useEffect
       } else {
         alert('Invalid Password');
         setPassword('');
@@ -84,6 +173,20 @@ export const VendorApp: React.FC = () => {
     } finally {
       setIsLoggingIn(false);
     }
+  };
+
+  const handleLogout = () => {
+    requestConfirm(
+      "Log Out",
+      "Are you sure you want to log out of the vendor portal?",
+      () => {
+        localStorage.removeItem('cb_vendor_authenticated');
+        setIsAuthenticated(false);
+        setPassword('');
+        setOrders([]);
+      },
+      'NEUTRAL'
+    );
   };
 
   const loadData = async () => {
@@ -141,8 +244,13 @@ export const VendorApp: React.FC = () => {
     }
   }, [darkMode]);
 
+  // Combined effect for data loading and subscription when authenticated
   useEffect(() => {
     if (isAuthenticated) {
+      // 1. Load initial static data (Menu, Settings)
+      loadData();
+
+      // 2. Subscribe to dynamic data (Orders)
       const unsubscribe = db.subscribeToOrders((newOrders) => {
         setOrders([...newOrders].sort((a, b) => b.createdAt - a.createdAt));
       });
@@ -267,19 +375,26 @@ export const VendorApp: React.FC = () => {
     );
   };
 
+  // --- FILTER LOGIC (UPDATED FOR DELIVERY WORKFLOW) ---
   const filteredOrders = useMemo(() => {
-    // HISTORY is now handled in the sub-component logic or explicitly when filtering
     if (subTab === 'HISTORY') {
       return orders.filter(o => o.status === OrderStatus.DELIVERED || o.status === OrderStatus.CANCELLED);
     }
     if (activeTab === 'MORE') return [];
+    
+    // FIX: Include OUT_FOR_DELIVERY in READY tab
+    if (activeTab === OrderStatus.READY) {
+        return orders.filter(o => o.status === OrderStatus.READY || o.status === OrderStatus.OUT_FOR_DELIVERY);
+    }
+
     return orders.filter(o => o.status === activeTab);
   }, [orders, activeTab, subTab]);
 
   const counts = useMemo(() => ({
     NEW: orders.filter(o => o.status === OrderStatus.NEW).length,
     COOKING: orders.filter(o => o.status === OrderStatus.COOKING).length,
-    READY: orders.filter(o => o.status === OrderStatus.READY).length,
+    // FIX: Count OUT_FOR_DELIVERY in READY tab badge
+    READY: orders.filter(o => o.status === OrderStatus.READY || o.status === OrderStatus.OUT_FOR_DELIVERY).length,
   }), [orders]);
 
   const revenue = useMemo(() => 
@@ -299,12 +414,21 @@ export const VendorApp: React.FC = () => {
   const handleMoreNavigate = (feature: string) => {
       setSubTab(feature);
   };
+  
+  const handleBackToMore = useCallback(() => setSubTab(null), []);
 
 
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-6">
-        <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl text-center">
+        <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl text-center relative overflow-hidden">
+          {/* TEST MODE INDICATOR ON LOGIN */}
+          {isTestMode && (
+             <div className="absolute top-0 right-0 bg-yellow-400 text-slate-900 text-xs font-black px-3 py-1 rounded-bl-xl shadow-md z-10">
+                TEST MODE
+             </div>
+          )}
+
           <div className="w-16 h-16 bg-orange-600 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-orange-900/40">
             <Lock className="text-white" size={32} />
           </div>
@@ -328,6 +452,12 @@ export const VendorApp: React.FC = () => {
               {isLoggingIn ? 'Verifying...' : 'Access Dashboard'}
             </button>
           </form>
+          
+          {isTestMode && (
+             <p className="mt-6 text-slate-600 text-xs font-mono">
+                Dev Hint: Password is <span className="text-yellow-400 font-bold">123</span>
+             </p>
+          )}
         </div>
       </div>
     );
@@ -359,7 +489,14 @@ export const VendorApp: React.FC = () => {
               <ChefHat size={20} />
             </div>
             <div>
-              <h1 className="font-bold leading-none">CampusBytes</h1>
+              <div className="flex items-center gap-2">
+                  <h1 className="font-bold leading-none">CampusBytes</h1>
+                  {isTestMode && (
+                      <span className="bg-yellow-400 text-slate-900 text-[9px] font-black px-1.5 py-0.5 rounded flex items-center gap-1">
+                          <TestTube size={8} /> TEST
+                      </span>
+                  )}
+              </div>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className={`w-2 h-2 rounded-full ${isShopOpen ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`}></span>
                 <span className="text-[10px] font-mono text-slate-400">{isShopOpen ? 'ONLINE' : 'CLOSED'}</span>
@@ -404,14 +541,28 @@ export const VendorApp: React.FC = () => {
                 >
                     <ClipboardList size={20} /> Take Manual Order
                 </button>
-                <OrderGrid orders={filteredOrders} />
+                <OrderGrid 
+                  orders={filteredOrders}
+                  currentTime={currentTime}
+                  updateStatus={updateStatus}
+                  updatePayment={updatePayment}
+                  completeOrder={completeOrder}
+                  requestConfirm={requestConfirm}
+                />
             </div>
         )}
 
         {/* 2. KITCHEN / READY TABS */}
         {(activeTab === 'COOKING' || activeTab === 'READY') && (
             <div className="animate-in slide-in-from-right-4 duration-300">
-                <OrderGrid orders={filteredOrders} />
+                <OrderGrid 
+                  orders={filteredOrders}
+                  currentTime={currentTime}
+                  updateStatus={updateStatus}
+                  updatePayment={updatePayment}
+                  completeOrder={completeOrder}
+                  requestConfirm={requestConfirm}
+                />
             </div>
         )}
 
@@ -426,12 +577,13 @@ export const VendorApp: React.FC = () => {
                         onToggleTheme={() => setDarkMode(!darkMode)}
                         isDarkMode={darkMode}
                         onShowStats={() => setShowStats(true)}
+                        onLogout={handleLogout}
                     />
                 )}
 
                 {/* SUB-VIEWS INSIDE 'MORE' */}
                 {subTab === 'HISTORY' && (
-                    <SubViewWrapper title="Order History" onBack={() => setSubTab(null)}>
+                    <SubViewWrapper title="Order History" onBack={handleBackToMore}>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {filteredOrders.map(order => (
                                 <OrderCard 
@@ -445,7 +597,7 @@ export const VendorApp: React.FC = () => {
                 )}
 
                 {subTab === 'MENU' && (
-                    <SubViewWrapper title="Menu Control" onBack={() => setSubTab(null)}>
+                    <SubViewWrapper title="Menu Control" onBack={handleBackToMore}>
                         <MenuList 
                             menu={menu}
                             onToggleStatus={handleUpdateMenuItem}
@@ -456,8 +608,14 @@ export const VendorApp: React.FC = () => {
                 )}
 
                 {subTab === 'SECURITY' && (
-                    <SubViewWrapper title="Security Center" onBack={() => setSubTab(null)}>
+                    <SubViewWrapper title="Security Center" onBack={handleBackToMore}>
                         <SecurityPanel requestConfirm={requestConfirm} />
+                    </SubViewWrapper>
+                )}
+
+                {subTab === 'SETTINGS' && (
+                    <SubViewWrapper title="Settings" onBack={handleBackToMore}>
+                        <SettingsPanel onBack={handleBackToMore} />
                     </SubViewWrapper>
                 )}
             </div>
@@ -477,74 +635,4 @@ export const VendorApp: React.FC = () => {
 
     </div>
   );
-
-  // --- Internal Helper Components ---
-  function OrderGrid({ orders }: { orders: Order[] }) {
-      if (orders.length === 0) {
-          return (
-            <div className="col-span-full text-center py-20 text-slate-400">
-                <div className="w-16 h-16 bg-slate-200 dark:bg-slate-800 rounded-full flex items-center justify-center mx-auto mb-4">
-                    <Clock size={30} />
-                </div>
-                <p className="font-medium">No orders in this stage.</p>
-            </div>
-          );
-      }
-      return (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {orders.map(order => (
-                <OrderCard 
-                    key={order.id} order={order} currentTime={currentTime}
-                    updateStatus={updateStatus} updatePayment={updatePayment}
-                    completeOrder={completeOrder} requestConfirm={requestConfirm}
-                />
-            ))}
-        </div>
-      );
-  }
-
-  function SubViewWrapper({ title, onBack, children }: any) {
-      return (
-          <div className="space-y-4">
-              <div className="flex items-center gap-3 mb-4">
-                  <button onClick={onBack} className="p-2 bg-white dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm">
-                      <Grid size={20} className="dark:text-white" />
-                  </button>
-                  <h2 className="text-xl font-bold text-slate-800 dark:text-white">{title}</h2>
-              </div>
-              {children}
-          </div>
-      )
-  }
 };
-
-const DesktopTab: React.FC<{ id: string, active: string, onClick: (id: string) => void, count: number }> = ({ id, active, onClick, count }) => (
-   <button 
-     onClick={() => onClick(id)}
-     className={`relative px-8 py-4 font-bold text-sm tracking-wide transition-all border-b-4 ${active === id ? 'border-orange-500 text-white bg-slate-900' : 'border-transparent text-slate-500 hover:text-slate-300 hover:bg-slate-900/50'}`}
-   >
-     {id === 'NEW' ? 'PENDING' : id}
-     {count > 0 && (
-       <span className={`ml-2 px-1.5 py-0.5 text-[10px] rounded-full ${active === id ? 'bg-orange-500 text-white' : 'bg-slate-800 text-slate-400'}`}>
-         {count}
-       </span>
-     )}
-   </button>
-);
-
-const MobileTab = ({ id, icon: Icon, label, active, onClick, count }: any) => (
-  <button 
-    onClick={() => onClick(id)}
-    className={`flex flex-col items-center justify-center relative transition-colors ${active === id ? 'text-orange-600 dark:text-orange-500' : 'text-slate-400 dark:text-slate-600'}`}
-  >
-    <div className={`p-1 rounded-xl transition-all ${active === id ? 'bg-orange-50 dark:bg-orange-900/20' : ''}`}>
-        <Icon size={active === id ? 22 : 20} strokeWidth={active === id ? 2.5 : 2} />
-    </div>
-    <span className="text-[10px] font-bold mt-0.5">{label}</span>
-    {count > 0 && (
-      <span className="absolute top-1 right-2 min-w-[16px] h-4 bg-red-500 text-white text-[9px] font-bold flex items-center justify-center rounded-full px-1 border border-white dark:border-slate-900">
-        {count}
-      </span>
-    )}
-  </button>
-);

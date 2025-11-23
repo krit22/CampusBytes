@@ -3,6 +3,7 @@ export enum OrderStatus {
   NEW = 'NEW',
   COOKING = 'COOKING',
   READY = 'READY',
+  OUT_FOR_DELIVERY = 'OUT_FOR_DELIVERY',
   DELIVERED = 'DELIVERED',
   CANCELLED = 'CANCELLED'
 }
@@ -10,6 +11,14 @@ export enum OrderStatus {
 export enum PaymentStatus {
   PENDING = 'PENDING',
   PAID = 'PAID'
+}
+
+export type OrderType = 'DINE_IN' | 'DELIVERY';
+
+export interface DeliveryDetails {
+  phoneNumber: string;
+  location: string; // e.g., "Hall 1" or "Library"
+  instructions: string; // e.g., "Room 202"
 }
 
 export interface MenuItem {
@@ -27,11 +36,20 @@ export interface CartItem extends MenuItem {
   quantity: number;
 }
 
+export interface SavedAddress {
+  type: 'HALL' | 'OTHER';
+  hallName?: string;
+  roomNo?: string;
+  customLocation?: string;
+}
+
 export interface User {
   id: string;
   name: string;
   email: string;
   avatar: string;
+  phone?: string;
+  savedAddress?: SavedAddress;
 }
 
 export interface Order {
@@ -44,6 +62,8 @@ export interface Order {
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   paymentMethod: 'CASH' | 'UPI';
+  orderType: OrderType;
+  deliveryDetails?: DeliveryDetails;
   createdAt: number; // timestamp
   updatedAt: number; // timestamp
 }
@@ -68,6 +88,7 @@ export interface SystemSettings {
   key: string;
   isBanSystemActive: boolean;
   isShopOpen?: boolean;
+  vendorPhoneNumber?: string;
 }
 
 // Google Identity Services Types

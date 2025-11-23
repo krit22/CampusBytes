@@ -1,4 +1,5 @@
-import { MenuItem, Order, OrderStatus, PaymentStatus, User, SpamRecord, SystemSettings } from '../types';
+
+import { MenuItem, Order, OrderStatus, PaymentStatus, User, SpamRecord, SystemSettings, OrderType, DeliveryDetails } from '../types';
 import { apiDb } from './api';
 
 // Constants
@@ -189,21 +190,37 @@ const mockDb = {
     
     // Init Settings
     if (!localStorage.getItem(STORAGE_KEYS.SETTINGS)) {
-        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify({ isBanSystemActive: true, isShopOpen: true }));
+        localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify({ 
+            key: 'GLOBAL_SETTINGS', 
+            isBanSystemActive: true, 
+            isShopOpen: true,
+            vendorPhoneNumber: '9876543210' 
+        }));
     }
   },
 
   login: async (userData?: Partial<User>): Promise<User> => {
     await delay(500);
+    // Check if user exists in local storage to retrieve Saved Settings (Phone, Address)
+    const storedUserStr = localStorage.getItem(STORAGE_KEYS.USER);
+    let storedUser: User | null = storedUserStr ? JSON.parse(storedUserStr) : null;
+
     let user: User;
     if (userData && userData.email) {
+      // New Login Attempt or Re-login
       user = {
         id: userData.id || 'u_' + Math.abs(userData.email.hashCode()),
-        name: userData.name || 'Campus Student',
+        name: storedUser?.name || userData.name || 'Campus Student', // Prefer stored name if edited
         email: userData.email,
-        avatar: userData.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${userData.name}`
+        avatar: userData.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${userData.name}`,
+        phone: storedUser?.phone,
+        savedAddress: storedUser?.savedAddress
       };
+    } else if (storedUser) {
+        // Auto-login from storage
+        user = storedUser;
     } else {
+      // Guest Fallback
       user = {
         id: 'u_mock_123',
         name: 'Alex Student',
@@ -214,10 +231,21 @@ const mockDb = {
     localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
     return user;
   },
+  
+  updateUser: async (updates: Partial<User>): Promise<User> => {
+      const storedUserStr = localStorage.getItem(STORAGE_KEYS.USER);
+      if (!storedUserStr) throw new Error("No user found");
+      
+      const user = JSON.parse(storedUserStr);
+      const updatedUser = { ...user, ...updates };
+      
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(updatedUser));
+      return updatedUser;
+  },
 
   vendorLogin: async (password: string): Promise<boolean> => {
-    // For local testing, check env var or default to 'admin'
-    const mockPass = import.meta.env?.VITE_VENDOR_PASSWORD || 'admin';
+    // For local testing, check env var or default to '123'
+    const mockPass = import.meta.env?.VITE_VENDOR_PASSWORD || '123';
     await delay(500);
     return password === mockPass;
   },
@@ -289,7 +317,14 @@ const mockDb = {
     return orders.find(o => o.id === id) || null;
   },
 
-  createOrder: async (user: User, items: any[], total: number, paymentMethod: 'CASH' | 'UPI'): Promise<Order> => {
+  createOrder: async (
+    user: User, 
+    items: any[], 
+    total: number, 
+    paymentMethod: 'CASH' | 'UPI', 
+    orderType: OrderType = 'DINE_IN',
+    deliveryDetails?: DeliveryDetails
+  ): Promise<Order> => {
     await delay(800);
     
     // CHECK SETTINGS & BAN
@@ -346,6 +381,8 @@ const mockDb = {
       status: OrderStatus.NEW,
       paymentStatus: PaymentStatus.PENDING,
       paymentMethod,
+      orderType,
+      deliveryDetails,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -372,6 +409,7 @@ const mockDb = {
       status: OrderStatus.NEW,
       paymentStatus: paymentStatus,
       paymentMethod: 'CASH',
+      orderType: 'DINE_IN',
       createdAt: Date.now(),
       updatedAt: Date.now(),
     };
@@ -423,7 +461,12 @@ const mockDb = {
   // --- MOCK ADMIN ---
   getSystemSettings: async (): Promise<SystemSettings> => {
     const stored = localStorage.getItem(STORAGE_KEYS.SETTINGS);
-    return stored ? JSON.parse(stored) : { key: 'GLOBAL_SETTINGS', isBanSystemActive: true, isShopOpen: true };
+    return stored ? JSON.parse(stored) : { key: 'GLOBAL_SETTINGS', isBanSystemActive: true, isShopOpen: true, vendorPhoneNumber: '9876543210' };
+  },
+  updateSystemSettings: async (updates: Partial<SystemSettings>): Promise<void> => {
+      const settings = await mockDb.getSystemSettings();
+      const newSettings = { ...settings, ...updates };
+      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(newSettings));
   },
   toggleBanSystem: async (isActive: boolean): Promise<void> => {
     const settings = await mockDb.getSystemSettings();
