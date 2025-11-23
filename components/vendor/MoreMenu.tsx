@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { 
-  Clock, Menu as MenuIcon, ShieldAlert, BarChart3, Power, Moon, Sun, ChevronRight, Settings 
+  Clock, Menu as MenuIcon, ShieldAlert, BarChart3, Power, Moon, Sun, ChevronRight, Settings, LogOut 
 } from 'lucide-react';
 
 interface Props {
@@ -11,10 +11,11 @@ interface Props {
     onToggleTheme: () => void;
     isDarkMode: boolean;
     onShowStats: () => void;
+    onLogout: () => void;
 }
 
 export const MoreMenu: React.FC<Props> = ({ 
-    onNavigate, onToggleShop, isShopOpen, onToggleTheme, isDarkMode, onShowStats 
+    onNavigate, onToggleShop, isShopOpen, onToggleTheme, isDarkMode, onShowStats, onLogout 
 }) => {
     
     const MenuCard = ({ icon: Icon, title, subtitle, onClick, colorClass }: any) => (
@@ -114,6 +115,12 @@ export const MoreMenu: React.FC<Props> = ({
             </div>
 
             <div className="pt-4 text-center">
+                <button 
+                    onClick={onLogout}
+                    className="text-red-500 font-bold text-sm hover:underline mb-2 flex items-center justify-center gap-2 mx-auto"
+                >
+                    <LogOut size={16} /> Log Out
+                </button>
                 <p className="text-[10px] text-slate-400 font-mono">CampusBytes Vendor v4.0</p>
             </div>
         </div>

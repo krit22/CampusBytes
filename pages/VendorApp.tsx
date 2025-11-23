@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { db } from '../services/storage';
 import { Order, OrderStatus, PaymentStatus, MenuItem } from '../types';
 import { 
@@ -21,7 +21,7 @@ import { SettingsPanel } from '../components/vendor/SettingsPanel';
 // HOOKS
 import { useAudio } from '../hooks/useAudio';
 
-// --- HELPER COMPONENTS (Moved Outside to prevent re-mounting) ---
+// --- HELPER COMPONENTS (Defined OUTSIDE to prevent re-mounting glitches) ---
 
 interface OrderGridProps {
   orders: Order[];
@@ -103,7 +103,11 @@ const MobileTab = ({ id, icon: Icon, label, active, onClick, count }: any) => (
 
 export const VendorApp: React.FC = () => {
   // --- STATE ---
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  // Initialize from localStorage to persist login across refreshes
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+      return localStorage.getItem('cb_vendor_authenticated') === 'true';
+  });
+  
   const [password, setPassword] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -156,8 +160,9 @@ export const VendorApp: React.FC = () => {
     try {
       const success = await db.vendorLogin(password);
       if (success) {
+        localStorage.setItem('cb_vendor_authenticated', 'true');
         setIsAuthenticated(true);
-        loadData();
+        // loadData() will be called by useEffect
       } else {
         alert('Invalid Password');
         setPassword('');
@@ -168,6 +173,20 @@ export const VendorApp: React.FC = () => {
     } finally {
       setIsLoggingIn(false);
     }
+  };
+
+  const handleLogout = () => {
+    requestConfirm(
+      "Log Out",
+      "Are you sure you want to log out of the vendor portal?",
+      () => {
+        localStorage.removeItem('cb_vendor_authenticated');
+        setIsAuthenticated(false);
+        setPassword('');
+        setOrders([]);
+      },
+      'NEUTRAL'
+    );
   };
 
   const loadData = async () => {
@@ -225,8 +244,13 @@ export const VendorApp: React.FC = () => {
     }
   }, [darkMode]);
 
+  // Combined effect for data loading and subscription when authenticated
   useEffect(() => {
     if (isAuthenticated) {
+      // 1. Load initial static data (Menu, Settings)
+      loadData();
+
+      // 2. Subscribe to dynamic data (Orders)
       const unsubscribe = db.subscribeToOrders((newOrders) => {
         setOrders([...newOrders].sort((a, b) => b.createdAt - a.createdAt));
       });
@@ -351,19 +375,26 @@ export const VendorApp: React.FC = () => {
     );
   };
 
+  // --- FILTER LOGIC (UPDATED FOR DELIVERY WORKFLOW) ---
   const filteredOrders = useMemo(() => {
-    // HISTORY is now handled in the sub-component logic or explicitly when filtering
     if (subTab === 'HISTORY') {
       return orders.filter(o => o.status === OrderStatus.DELIVERED || o.status === OrderStatus.CANCELLED);
     }
     if (activeTab === 'MORE') return [];
+    
+    // FIX: Include OUT_FOR_DELIVERY in READY tab
+    if (activeTab === OrderStatus.READY) {
+        return orders.filter(o => o.status === OrderStatus.READY || o.status === OrderStatus.OUT_FOR_DELIVERY);
+    }
+
     return orders.filter(o => o.status === activeTab);
   }, [orders, activeTab, subTab]);
 
   const counts = useMemo(() => ({
     NEW: orders.filter(o => o.status === OrderStatus.NEW).length,
     COOKING: orders.filter(o => o.status === OrderStatus.COOKING).length,
-    READY: orders.filter(o => o.status === OrderStatus.READY).length,
+    // FIX: Count OUT_FOR_DELIVERY in READY tab badge
+    READY: orders.filter(o => o.status === OrderStatus.READY || o.status === OrderStatus.OUT_FOR_DELIVERY).length,
   }), [orders]);
 
   const revenue = useMemo(() => 
@@ -383,6 +414,8 @@ export const VendorApp: React.FC = () => {
   const handleMoreNavigate = (feature: string) => {
       setSubTab(feature);
   };
+  
+  const handleBackToMore = useCallback(() => setSubTab(null), []);
 
 
   if (!isAuthenticated) {
@@ -544,12 +577,13 @@ export const VendorApp: React.FC = () => {
                         onToggleTheme={() => setDarkMode(!darkMode)}
                         isDarkMode={darkMode}
                         onShowStats={() => setShowStats(true)}
+                        onLogout={handleLogout}
                     />
                 )}
 
                 {/* SUB-VIEWS INSIDE 'MORE' */}
                 {subTab === 'HISTORY' && (
-                    <SubViewWrapper title="Order History" onBack={() => setSubTab(null)}>
+                    <SubViewWrapper title="Order History" onBack={handleBackToMore}>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {filteredOrders.map(order => (
                                 <OrderCard 
@@ -563,7 +597,7 @@ export const VendorApp: React.FC = () => {
                 )}
 
                 {subTab === 'MENU' && (
-                    <SubViewWrapper title="Menu Control" onBack={() => setSubTab(null)}>
+                    <SubViewWrapper title="Menu Control" onBack={handleBackToMore}>
                         <MenuList 
                             menu={menu}
                             onToggleStatus={handleUpdateMenuItem}
@@ -574,14 +608,14 @@ export const VendorApp: React.FC = () => {
                 )}
 
                 {subTab === 'SECURITY' && (
-                    <SubViewWrapper title="Security Center" onBack={() => setSubTab(null)}>
+                    <SubViewWrapper title="Security Center" onBack={handleBackToMore}>
                         <SecurityPanel requestConfirm={requestConfirm} />
                     </SubViewWrapper>
                 )}
 
                 {subTab === 'SETTINGS' && (
-                    <SubViewWrapper title="Settings" onBack={() => setSubTab(null)}>
-                        <SettingsPanel onBack={() => setSubTab(null)} />
+                    <SubViewWrapper title="Settings" onBack={handleBackToMore}>
+                        <SettingsPanel onBack={handleBackToMore} />
                     </SubViewWrapper>
                 )}
             </div>
