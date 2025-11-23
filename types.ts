@@ -36,11 +36,20 @@ export interface CartItem extends MenuItem {
   quantity: number;
 }
 
+export interface SavedAddress {
+  type: 'HALL' | 'OTHER';
+  hallName?: string;
+  roomNo?: string;
+  customLocation?: string;
+}
+
 export interface User {
   id: string;
   name: string;
   email: string;
   avatar: string;
+  phone?: string;
+  savedAddress?: SavedAddress;
 }
 
 export interface Order {

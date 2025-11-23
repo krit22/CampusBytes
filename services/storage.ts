@@ -201,15 +201,26 @@ const mockDb = {
 
   login: async (userData?: Partial<User>): Promise<User> => {
     await delay(500);
+    // Check if user exists in local storage to retrieve Saved Settings (Phone, Address)
+    const storedUserStr = localStorage.getItem(STORAGE_KEYS.USER);
+    let storedUser: User | null = storedUserStr ? JSON.parse(storedUserStr) : null;
+
     let user: User;
     if (userData && userData.email) {
+      // New Login Attempt or Re-login
       user = {
         id: userData.id || 'u_' + Math.abs(userData.email.hashCode()),
-        name: userData.name || 'Campus Student',
+        name: storedUser?.name || userData.name || 'Campus Student', // Prefer stored name if edited
         email: userData.email,
-        avatar: userData.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${userData.name}`
+        avatar: userData.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${userData.name}`,
+        phone: storedUser?.phone,
+        savedAddress: storedUser?.savedAddress
       };
+    } else if (storedUser) {
+        // Auto-login from storage
+        user = storedUser;
     } else {
+      // Guest Fallback
       user = {
         id: 'u_mock_123',
         name: 'Alex Student',
@@ -219,6 +230,17 @@ const mockDb = {
     }
     localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
     return user;
+  },
+  
+  updateUser: async (updates: Partial<User>): Promise<User> => {
+      const storedUserStr = localStorage.getItem(STORAGE_KEYS.USER);
+      if (!storedUserStr) throw new Error("No user found");
+      
+      const user = JSON.parse(storedUserStr);
+      const updatedUser = { ...user, ...updates };
+      
+      localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(updatedUser));
+      return updatedUser;
   },
 
   vendorLogin: async (password: string): Promise<boolean> => {

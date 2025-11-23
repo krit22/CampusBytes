@@ -60,6 +60,17 @@ export const apiDb = {
     return stored ? JSON.parse(stored) : null;
   },
 
+  updateUser: async (updates: Partial<User>): Promise<User> => {
+    const storedUserStr = localStorage.getItem(USER_STORAGE_KEY);
+    if (!storedUserStr) throw new Error("No user found");
+    
+    const user = JSON.parse(storedUserStr);
+    const updatedUser = { ...user, ...updates };
+    
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser));
+    return updatedUser;
+  },
+
   // --- DATA ---
   getMenu: async (): Promise<MenuItem[]> => {
     const res = await fetch(`${API_URL}/api/menu`);

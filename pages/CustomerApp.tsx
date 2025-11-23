@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState, useRef } from 'react';
-import { ShoppingBag, Utensils, Clock, LogOut, ChevronRight, Search, Flame, Lightbulb, Sparkles, Timer, RotateCcw, MapPin, Phone } from 'lucide-react';
+import { ShoppingBag, Utensils, Clock, LogOut, ChevronRight, Search, Flame, Lightbulb, Sparkles, Timer, RotateCcw, MapPin, Phone, User as UserIcon } from 'lucide-react';
 import { MenuItem, CartItem, Order, OrderStatus, User, OrderType, DeliveryDetails } from '../types';
 import { db, parseJwt } from '../services/storage';
 import { CartSheet } from '../components/CartSheet';
@@ -12,6 +12,7 @@ import { ToastNotification, ToastState } from '../components/shared/ToastNotific
 import { CustomerLogin } from '../components/customer/CustomerLogin';
 import { BannedView } from '../components/customer/BannedView';
 import { OnboardingWalkthrough } from '../components/customer/OnboardingWalkthrough';
+import { UserProfileModal } from '../components/customer/UserProfileModal';
 
 // CONFIG
 const TRIVIA_FACTS = [
@@ -40,8 +41,10 @@ export const CustomerApp: React.FC = () => {
   const [dailyFact, setDailyFact] = useState('');
   const [vendorPhone, setVendorPhone] = useState('9876543210');
   
-  // Onboarding State
+  // Onboarding & Profile State
   const [showWalkthrough, setShowWalkthrough] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [isProfileFirstTime, setIsProfileFirstTime] = useState(false);
   
   // Ban State
   const [banInfo, setBanInfo] = useState<{reason: string, expiresAt: number} | null>(null);
@@ -75,10 +78,16 @@ export const CustomerApp: React.FC = () => {
 
   // Check for first-time visit on Menu load
   useEffect(() => {
-      if (view === 'MENU' && !localStorage.getItem('cb_walkthrough_seen')) {
-          setShowWalkthrough(true);
+      if (view === 'MENU' && user) {
+          // Check if profile needs setup (missing phone)
+          if (!user.phone) {
+             setIsProfileFirstTime(true);
+             setShowProfileModal(true);
+          } else if (!localStorage.getItem('cb_walkthrough_seen')) {
+             setShowWalkthrough(true);
+          }
       }
-  }, [view]);
+  }, [view, user]);
 
   const finishWalkthrough = () => {
       localStorage.setItem('cb_walkthrough_seen', 'true');
@@ -164,6 +173,27 @@ export const CustomerApp: React.FC = () => {
         setVendorPhone(settings.vendorPhoneNumber);
     }
     setIsLoading(false);
+  };
+  
+  const handleUpdateUser = async (updates: Partial<User>) => {
+      try {
+          const updated = await db.updateUser(updates);
+          setUser(updated);
+          return;
+      } catch (e) {
+          console.error("Profile update failed", e);
+      }
+  };
+
+  const handleProfileSave = async (updates: Partial<User>) => {
+      await handleUpdateUser(updates);
+      setShowProfileModal(false);
+      
+      // If closing first-time setup, show walkthrough next
+      if (isProfileFirstTime && !localStorage.getItem('cb_walkthrough_seen')) {
+          setIsProfileFirstTime(false);
+          setShowWalkthrough(true);
+      }
   };
 
   const handleLogout = async () => {
@@ -586,9 +616,11 @@ export const CustomerApp: React.FC = () => {
                 isOpen={isCartOpen}
                 onClose={() => setIsCartOpen(false)}
                 items={cart}
+                user={user}
                 onUpdateQuantity={updateQuantity}
                 onPlaceOrder={handlePlaceOrder}
                 isPlacingOrder={isPlacingOrder}
+                onUpdateUser={handleUpdateUser}
               />
           </div>
       )
@@ -614,17 +646,24 @@ export const CustomerApp: React.FC = () => {
     <div className="min-h-screen pb-24 max-w-md mx-auto bg-slate-50 border-x border-slate-100 shadow-2xl relative">
       
       {showWalkthrough && <OnboardingWalkthrough onFinish={finishWalkthrough} />}
+      {showProfileModal && user && (
+          <UserProfileModal 
+              user={user} 
+              onSave={handleProfileSave} 
+              isFirstTime={isProfileFirstTime} 
+          />
+      )}
 
       <ConfirmationModal config={confirmConfig} onClose={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} />
       <ToastNotification toast={toast} />
 
       <header className="bg-white sticky top-0 z-20 shadow-sm">
           <div className="px-5 py-3 border-b border-slate-100 flex justify-between items-center">
-            <div className="flex items-center gap-2">
-                <div className="bg-orange-100 p-2 rounded-lg text-orange-600">
-                    <Utensils size={20} />
+            <div className="flex items-center gap-2" onClick={() => { setIsProfileFirstTime(false); setShowProfileModal(true); }}>
+                <div className="bg-orange-100 p-2 rounded-lg text-orange-600 cursor-pointer">
+                    <UserIcon size={20} />
                 </div>
-                <div>
+                <div className="cursor-pointer">
                     <h1 className="font-bold text-slate-800 leading-tight">Food Palace</h1>
                     <p className="text-xs text-slate-500 max-w-[120px] truncate">Hello, {user?.name.split(' ')[0]}</p>
                 </div>
@@ -768,9 +807,11 @@ export const CustomerApp: React.FC = () => {
         isOpen={isCartOpen}
         onClose={() => setIsCartOpen(false)}
         items={cart}
+        user={user}
         onUpdateQuantity={updateQuantity}
         onPlaceOrder={handlePlaceOrder}
         isPlacingOrder={isPlacingOrder}
+        onUpdateUser={handleUpdateUser}
       />
     </div>
   );
